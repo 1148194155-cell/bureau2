@@ -1,0 +1,9 @@
+{
+  "name": "local-canvas",
+  "displayName": "Local Canvas",
+  "description": "可视化 AI 工作流画布",
+  "entry": "scripts/start.ps1",
+  "type": "webapp",
+  "port": 5173,
+  "icon": "assets/icon.png"
+}

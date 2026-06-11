@@ -1,0 +1,20 @@
+﻿{
+  "name": "local-canvas",
+  "version": "0.1.0",
+  "description": "可视化 AI 工作流画布 — Codex 插件",
+  "author": {
+    "name": "1148194155-cell",
+    "url": "https://github.com/1148194155-cell/bureau2"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Local Canvas",
+    "shortDescription": "可视化 AI 工作流画布，支持拖拽构建工作流、管理模型/技能/知识库。",
+    "longDescription": "Local Canvas 是一个可视化 AI 工作流画布，支持通过拖拽节点构建 AI 工作流、管理模型/技能/知识库、执行工作流并实时查看日志。通过 REST API 和 WebSocket 与 Codex 深度集成。",
+    "developerName": "1148194155-cell",
+    "category": "Productivity",
+    "capabilities": [],
+    "defaultPrompt": "Help me use Local Canvas or show me how to build an AI workflow."
+  },
+  "apps": "./.app.json"
+}

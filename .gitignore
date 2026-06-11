@@ -14,3 +14,12 @@ gh_*.txt
 tmp_*
 
 release/
+
+models/*.gguf
+
+*.log
+.env
+.DS_Store
+
+.codegraph/
+.reasonix/

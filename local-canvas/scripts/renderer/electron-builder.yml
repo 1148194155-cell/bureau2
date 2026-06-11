@@ -1,0 +1,39 @@
+appId: com.localcanvas.app
+productName: Local Canvas
+copyright: Copyright 2026
+
+directories:
+  app: ".."
+  output: ../release
+
+extraMetadata:
+  main: electron/main.mjs
+
+files:
+  - "package.json"
+  - "src/**/*"
+  - "electron/**/*"
+  - "public/**/*"
+  - "node_portable/**/*"
+
+asar: false
+npmRebuild: false
+
+win:
+  target:
+    - target: portable
+      arch:
+        - x64
+
+mac:
+  target:
+    - target: dmg
+      arch:
+        - x64
+        - arm64
+
+linux:
+  target:
+    - target: AppImage
+      arch:
+        - x64

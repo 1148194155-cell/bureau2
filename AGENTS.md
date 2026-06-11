@@ -22,3 +22,18 @@
   - 不为未改动的代码添加注释。
   - 仅在逻辑不明确时才添加注释。
 - **代码清理**：确认无用的代码直接删除，不留注释说明。
+
+## 🌐 网络与协作 (Network & Collaboration)
+
+### Cloudflare WARP 代理配置
+
+连接 GitHub 等海外服务时，建议使用 Cloudflare WARP 改善网络连通性：
+
+1. 下载安装 [Cloudflare WARP](https://developers.cloudflare.com/warp-client/)
+2. 启动后连上（`warp-cli.exe connect` 或通过 GUI）
+3. 验证状态：`warp-cli.exe status` 应显示 "Connected"
+4. 配置 Git 使用 WARP 代理：
+   ```
+   git config --global http.proxy http://127.0.0.1:40000
+   git config --global https.proxy http://127.0.0.1:40000
+   ```
