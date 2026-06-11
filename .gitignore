@@ -23,3 +23,8 @@ models/*.gguf
 
 .codegraph/
 .reasonix/
+
+local-canvas/scripts/models/
+local-canvas/scripts/renderer/node_modules/
+
+local-canvas/scripts/node_modules/
