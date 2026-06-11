@@ -1,0 +1,39 @@
+[DB] Initialized at C:\Users\11481\.localcanvas\localcanvas.db
+[AutoDiscover] Starting local resource discovery...
+[WS] WebSocket server initialized at /ws
+
+鈺斺晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晽
+鈺?        Local Canvas Backend Server          鈺?鈺戔攢鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈺?鈺? REST API : http://0.0.0.0:3001/api        鈺?鈺? WebSocket: ws://0.0.0.0:3001/ws           鈺?鈺? Health   : http://0.0.0.0:3001/api/health 鈺?鈺氣晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨晲鈺愨暆
+  
+  + Skill: figma-generate-design
+  + Skill: figma-implement-design
+  + Skill: image-vision
+  + Skill: minimax-vision
+  + Skill: pdf
+  + Skill: playwright
+  + Skill: test-summarizer
+  + Skill: brainstorming
+  + Skill: continuous-learning-v2
+  + Skill: design-taste-frontend
+  + Skill: everything-claude-code
+  + Skill: find-skills
+  + Skill: frontend-design
+  + Skill: impeccable
+  + Skill: paddleocr-text-recognition
+  + Skill: project-management
+  + Skill: security-review
+  + Skill: stable-diffusion-image-generation
+  + Skill: using-superpowers
+[AutoDiscover] Skills: 19 unique discovered
+[AutoDiscover] Models: ready
+[AutoDiscover] Knowledge Bases: 0 seeded
+[AutoDiscover] Done.
+[HTTP] GET / 鈫?200 (18ms)
+[HTTP] GET /assets/index-DyeiPJ8v.css 鈫?200 (4ms)
+[HTTP] GET /assets/index-BvzPFO2p.js 鈫?200 (16ms)
+[HTTP] GET /api/knowledge 鈫?200 (4ms)
+[HTTP] GET /api/builtin/status 鈫?200 (3ms)
+[HTTP] GET /api/apis 鈫?200 (35ms)
+[HTTP] GET /api/skills 鈫?200 (501ms)
+[HTTP] GET /api/models 鈫?200 (526ms)
+[HTTP] GET /api/health 鈫?200 (3ms)

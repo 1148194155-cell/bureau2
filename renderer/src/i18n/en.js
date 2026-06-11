@@ -1,0 +1,62 @@
+const en = {
+  nav: { canvas: 'Canvas', settings: 'Settings', version: 'v1.0' },
+  toolbar: {
+    load: 'Load', save: 'Save', export: 'Export',
+    undo: 'Undo', redo: 'Redo', clear: 'Clear',
+    triggers: 'Triggers', run: 'Run',
+    loadHint: 'Load Ctrl+O', saveHint: 'Save Ctrl+S',
+    exportHint: 'Export Ctrl+E', undoHint: 'Undo Ctrl+Z',
+    redoHint: 'Redo Ctrl+Y', clearHint: 'Clear Canvas',
+    triggerHint: 'Trigger Settings', workflowName: 'Untitled',
+    promptLoadId: 'Enter workflow ID:', promptWorkflowName: 'Workflow name:',
+    confirmClear: 'Clear canvas? This can be undone.',
+    emptyCanvas: 'Canvas is empty',
+    noSaved: 'No saved workflows',
+    saved: 'Saved', loaded: 'Loaded: ', exported: 'Exported',
+    started: 'Running', cleared: 'Cleared',
+  },
+  resource: {
+    skills: 'Skills', knowledge: 'Knowledge', models: 'Models', apis: 'APIs',
+    refresh: 'Refresh', empty: 'Empty', online: 'Online', offline: 'Offline',
+    loadFailed: 'Failed to load',
+  },
+  chat: {
+    title: 'New Chat', placeholder: 'Type a command...',
+    greeting: 'How can I help?', subtitle: 'Describe what you want to do on the canvas',
+    hints: ['Add a text summary node', 'Clear the canvas', 'Connect these nodes'],
+    defaultModel: 'Default', history: 'History', newChat: 'New chat', clear: 'Clear',
+    nodeAdded: '+ Node added', edgeAdded: '+ Edge added',
+    configUpdated: '+ Config updated', aiTriggered: 'AI triggered execution',
+    cleared: '+ Canvas cleared', requestFailed: 'Sorry, request failed: ',
+  },
+  nodeConfig: {
+    title: 'Node Config', nodeId: 'Node ID', model: 'Model',
+    apiKey: 'API Key', params: 'Params (JSON)', none: 'None',
+    delete: 'Delete', save: 'Save', confirmDelete: 'Delete this node?',
+    saved: 'Config saved', deleted: 'Node deleted',
+  },
+  edgeMapping: {
+    title: 'Edge Mapping', sourceOutput: 'Source Output',
+    targetInput: 'Target Input', cancel: 'Cancel', confirm: 'Confirm',
+  },
+  runLog: {
+    title: 'EXECUTION.LOG', waiting: 'Waiting for logs...',
+    clear: 'Clear', export: 'Export', done: 'Done',
+  },
+  settings: {
+    title: 'Settings',
+    tabs: { models: 'Models', apikeys: 'API Keys', knowledge: 'Knowledge' },
+    add: 'Add', cancel: 'Cancel', save: 'Save',
+    addModel: 'Add Model', addKey: 'Add API Key', addKB: 'Add Knowledge Base',
+    name: 'Name', adapter: 'Adapter', endpoint: 'API Endpoint',
+    modelId: 'Model ID', key: 'Key', folderPath: 'Folder Path',
+    online: 'Online', offline: 'Offline',
+    index: 'Index', delete: 'Delete',
+    confirmDelete: 'Delete?', deleted: 'Deleted',
+    saved: 'Saved', indexed: 'Indexed', loadFailed: 'Failed to load settings',
+  },
+  toast: {
+    skillAdded: 'Added: ',
+  },
+};
+export default en;

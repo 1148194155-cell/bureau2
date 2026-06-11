@@ -1,0 +1,62 @@
+const zh = {
+  nav: { canvas: '画布', settings: '设置', version: 'v1.0' },
+  toolbar: {
+    load: '加载', save: '保存', export: '导出',
+    undo: '撤销', redo: '重做', clear: '清空',
+    triggers: '触发器', run: '运行',
+    loadHint: '加载 Ctrl+O', saveHint: '保存 Ctrl+S',
+    exportHint: '导出 Ctrl+E', undoHint: '撤销 Ctrl+Z',
+    redoHint: '重做 Ctrl+Y', clearHint: '清空画布',
+    triggerHint: '触发器设置', workflowName: '未命名',
+    promptLoadId: '输入工作流 ID:', promptWorkflowName: '工作流名称:',
+    confirmClear: '清空画布？可撤销。',
+    emptyCanvas: '画布为空',
+    noSaved: '没有已保存的工作流',
+    saved: '已保存', loaded: '已加载: ', exported: '已导出',
+    started: '已启动', cleared: '已清空',
+  },
+  resource: {
+    skills: 'Skills', knowledge: '知识库', models: '模型', apis: 'API',
+    refresh: '刷新', empty: '暂无', online: '在线', offline: '离线',
+    loadFailed: '加载失败',
+  },
+  chat: {
+    title: '新对话', placeholder: '输入指令...',
+    greeting: '有什么可以帮你的？', subtitle: '用自然语言描述你想在画布上做的事情',
+    hints: ['添加文本摘要节点', '清空画布', '帮我连线节点'],
+    defaultModel: '默认', history: '历史', newChat: '新建', clear: '清空',
+    nodeAdded: '+ 已添加节点', edgeAdded: '+ 已添加连线',
+    configUpdated: '+ 配置已更新', aiTriggered: 'AI 已触发执行',
+    cleared: '+ 画布已清空', requestFailed: '请求失败: ',
+  },
+  nodeConfig: {
+    title: '节点配置', nodeId: '节点 ID', model: '绑定模型',
+    apiKey: 'API Key', params: '参数 (JSON)', none: '未选择',
+    delete: '删除', save: '保存配置', confirmDelete: '删除此节点？',
+    saved: '配置已保存', deleted: '节点已删除',
+  },
+  edgeMapping: {
+    title: '连线映射', sourceOutput: '源输出字段',
+    targetInput: '目标输入字段', cancel: '取消', confirm: '确认映射',
+  },
+  runLog: {
+    title: '执行日志', waiting: '等待日志...',
+    clear: '清屏', export: '导出', done: '完成',
+  },
+  settings: {
+    title: '设置',
+    tabs: { models: '模型管理', apikeys: 'API Key', knowledge: '知识库' },
+    add: '添加', cancel: '取消', save: '保存',
+    addModel: '添加模型', addKey: '添加 API Key', addKB: '添加知识库',
+    name: '名称', adapter: '适配器', endpoint: 'API 端点',
+    modelId: '模型 ID', key: 'Key', folderPath: '文件夹路径',
+    online: '在线', offline: '离线',
+    index: '索引', delete: '删除',
+    confirmDelete: '确定删除？', deleted: '已删除',
+    saved: '已保存', indexed: '索引完成', loadFailed: '加载设置失败',
+  },
+  toast: {
+    skillAdded: '已添加: ',
+  },
+};
+export default zh;

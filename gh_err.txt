@@ -1,0 +1,2 @@
+
+failed to authenticate via web browser: Post "https://github.com/login/device/code": read tcp 172.16.0.2:63711->140.82.116.4:443: wsarecv: An existing connection was forcibly closed by the remote host.

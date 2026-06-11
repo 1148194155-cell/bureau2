@@ -1,0 +1,14 @@
+node_modules/
+renderer/node_modules/
+renderer/dist/
+public/
+dist/
+*.db
+*.enc
+.localcanvas/
+
+node_portable/
+
+gh_*.txt
+
+tmp_*
