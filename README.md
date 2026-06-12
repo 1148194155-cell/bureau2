@@ -1,58 +1,75 @@
-# Local Canvas
+﻿# Local Canvas — 可视化 AI 工作流画布
 
-> A visual AI workflow builder that runs entirely on your machine.
-> 一个完全在本地运行的 AI 工作流可视化搭建工具。
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE)
-[![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
-
-## Features
-
-- 🎨 **Drag-and-drop canvas** — build AI workflows visually
-- 🔌 **Multi-model support** — OpenAI, Ollama, Anthropic, llama.cpp, built-in local model
-- 📚 **Knowledge bases** — index local documents for RAG
-- 🔗 **API integration** — connect external services
-- 💬 **Built-in AI chat** — natural language canvas control
-- 💻 **Electron desktop app** — cross-platform
+拖拽节点即可构建 AI 工作流。完全本地运行，支持多模型切换、知识库 RAG、API 集成和内置 AI 对话。
 
 ## 功能
 
-- 🎨 **拖拽式画布** — 可视化搭建 AI 工作流
-- 🔌 **多模型支持** — OpenAI、Ollama、Anthropic、llama.cpp、内置本地模型
-- 📚 **知识库** — 索引本地文档实现 RAG
-- 🔗 **API 集成** — 连接外部服务
-- 💬 **内置 AI 对话** — 自然语言控制画布
-- 💻 **Electron 桌面应用** — 跨平台
+- **拖拽式画布** — 可视化搭建 AI 工作流
+- **多模型支持** — OpenAI / Ollama / Anthropic / llama.cpp / 内置本地模型
+- **知识库 RAG** — 索引本地文档，增强 AI 上下文
+- **API 集成** — 在工作流中调用外部服务
+- **内置 AI 对话** — 自然语言控制画布操作
+- **Electron 桌面应用** — Windows / macOS / Linux 跨平台
 
-## Quick Start
+## 安装方式
+
+### 方式一：作为 Codex 插件安装
+
+在 Codex 侧边栏 → 插件市场 → 搜索 "Local Canvas" → 点击安装。
+
+或者手动克隆：
 
 ```bash
-node -v  # need >= 18
-npm install
-npm start
+git clone https://github.com/1148194155-cell/bureau2.git
 ```
 
-Open http://localhost:5173
+### 方式二：作为 OpenAI 兼容 Skill 使用
+
+将 `local-canvas/` 目录放入任意 OpenAI agent 的 skills 路径下即可自动发现。
+
+### 方式三：独立运行
+
+```bash
+node -v  # 需要 Node.js >= 18
+cd local-canvas/scripts
+npm install
+cd renderer
+npm install
+cd ..
+node src/index.js    # 后端 http://localhost:3001
+npx vite --cwd renderer  # 前端 http://localhost:5173
+```
 
 ## 快速开始
 
-```bash
-node -v  # 需要 >= 18
-npm install
-npm start
+```powershell
+.\local-canvas\scripts\start.ps1           # 启动前后端
+.\local-canvas\scripts\start.ps1 -NoBrowser # 不自动打开浏览器
+.\local-canvas\scripts\stop.ps1            # 停止服务
 ```
 
-打开 http://localhost:5173
+启动后访问：
+- 前端界面：http://localhost:5173
+- 后端 API：http://localhost:3001/api
+- 健康检查：http://localhost:3001/api/health
 
-## Project Structure / 项目结构
+## 项目结构
 
 ```
 local-canvas/
-├── src/           # Backend (Express + SQLite)
-├── renderer/      # Frontend (React + Vite)
-└── electron/      # Desktop shell (optional)
+├── skills/SKILL.md          # AI skill 指令
+├── agents/openai.yaml       # OpenAI agent 元数据
+├── .codex-plugin/plugin.json # Codex 插件清单
+├── scripts/
+│   ├── src/                 # 后端 (Express + SQLite + WebSocket)
+│   ├── renderer/            # 前端 (React + Vite + React Flow)
+│   ├── start.ps1            # 一键启动 (Windows)
+│   └── stop.ps1             # 停止服务
+└── assets/                  # 资源文件
 ```
 
-## License / 许可证
+## 许可证
 
 [MIT](LICENSE)
