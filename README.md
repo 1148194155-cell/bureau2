@@ -2,6 +2,8 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
 
+![截图](test_screenshots/step4_drag1.png)
+
 拖拽节点即可构建 AI 工作流。完全本地运行，支持多模型切换、知识库 RAG、API 集成和内置 AI 对话。
 
 ## 功能
@@ -71,5 +73,38 @@ local-canvas/
 ```
 
 ## 许可证
+
+[MIT](LICENSE)
+
+---
+
+# Local Canvas — Visual AI Workflow Canvas
+
+Drag and drop nodes to build AI workflows. Fully local execution, multi-model support, knowledge base RAG, API integration, and built-in AI assistant.
+
+## Features
+
+- **Drag-and-drop Canvas** — Visually build AI workflows
+- **Multi-model Support** — OpenAI / Ollama / Anthropic / llama.cpp / built‑in local model
+- **Knowledge Base RAG** — Index local documents to enhance AI context
+- **API Integration** — Call external services within workflows
+- **Built-in AI Chat** — Natural language control over canvas operations
+- **Electron Desktop App** — Cross‑platform for Windows / macOS / Linux
+
+## Quick Start
+
+Double-click `start.bat` (or `启动.bat`) — dependency installation and service startup handled automatically.
+
+Or via PowerShell:
+
+```powershell
+.\local-canvas\scripts\start.ps1
+```
+
+Then visit:
+- Frontend: http://localhost:5173
+- Backend API: http://localhost:3001/api
+
+## License
 
 [MIT](LICENSE)
