@@ -1,0 +1,5 @@
+﻿interface:
+  display_name: "Local Canvas"
+  short_description: "Visual AI workflow builder with drag-and-drop canvas"
+  icon_small: "./assets/icon.png"
+  default_prompt: "Use $local-canvas to build and execute AI workflows on a visual canvas with model management, knowledge bases, and API integrations."
