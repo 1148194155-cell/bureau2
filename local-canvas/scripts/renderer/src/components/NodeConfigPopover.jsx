@@ -1,11 +1,11 @@
 import { useState, useEffect, useRef } from "react";
-import { Trash2, X, FlaskConical, Globe, Send } from "lucide-react";
+import { Trash2, X, FlaskConical, Globe, Send, FileOutput } from "lucide-react";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
 import { useI18n } from "../i18n";
 
-const TYPE_ICONS = { skill: FlaskConical, knowledge: Globe, output: Send };
-const TYPE_COLORS = { skill: "emerald", knowledge: "purple", output: "amber" };
+const TYPE_ICONS = { skill: FlaskConical, knowledge: Globe, output: Send, file_output: FileOutput };
+const TYPE_COLORS = { skill: "emerald", knowledge: "purple", output: "amber", file_output: "teal" };
 
 export default function NodeConfigPopover() {
   const { t } = useI18n();
@@ -87,6 +87,61 @@ export default function NodeConfigPopover() {
               onChange={(e) => setConfig({ ...config, apiKey: e.target.value })} placeholder="sk-..."
               className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 outline-none" />
           </div>
+        )}
+
+        {node.type === "file_output" && (
+          <>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">{t('nodeConfig.outputFormat')}</label>
+              <select value={config.format || nodeData.config?.format || "json"}
+                onChange={(e) => setConfig({ ...config, format: e.target.value })}
+                className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs outline-none">
+                <option value="txt">TXT (text)</option>
+                <option value="json">JSON</option>
+                <option value="csv">CSV</option>
+                <option value="html">HTML</option>
+                <option value="md">Markdown</option>
+                <option value="xml">XML</option>
+                <option value="yaml">YAML</option>
+                <option value="toml">TOML</option>
+                <option value="env">.env</option>
+                <option value="ini">INI</option>
+                <option value="log">Log</option>
+                <option value="pdf">PDF</option>
+                <option value="docx">DOCX</option>
+                <option value="xlsx">XLSX</option>
+                <option value="pptx">PPTX</option>
+                <option value="png">PNG (image)</option>
+                <option value="jpg">JPG (image)</option>
+                <option value="gif">GIF (image)</option>
+                <option value="webp">WebP (image)</option>
+                <option value="svg">SVG (vector)</option>
+                <option value="mp4">MP4 (video)</option>
+                <option value="webm">WebM (video)</option>
+                <option value="mov">MOV (video)</option>
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">{t('nodeConfig.outputDir')}</label>
+              <input value={config.outputDir || nodeData.config?.outputDir || ""}
+                onChange={(e) => setConfig({ ...config, outputDir: e.target.value })} placeholder="output/"
+                className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 outline-none" />
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">{t('nodeConfig.fileName')}</label>
+              <input value={config.fileName || nodeData.config?.fileName || ""}
+                onChange={(e) => setConfig({ ...config, fileName: e.target.value })} placeholder="output_2026"
+                className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 outline-none" />
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">{t('nodeConfig.template')}</label>
+              <textarea
+                value={config.template || nodeData.config?.template || ""}
+                onChange={(e) => setConfig({ ...config, template: e.target.value })}
+                rows={3} placeholder={'<h1>{{title}}</h1>\n<p>{{content}}</p>'}
+                className="w-full px-2 py-1.5 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-[10px] placeholder-surface-600 font-mono resize-none outline-none" />
+            </div>
+          </>
         )}
 
         <div>

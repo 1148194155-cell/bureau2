@@ -19,6 +19,9 @@ const zh = {
     skills: 'Skills', knowledge: '知识库', models: '模型', apis: 'API',
     refresh: '刷新', empty: '暂无', online: '在线', offline: '离线',
     loadFailed: '加载失败',
+    builtin: '内置节点',
+    fileOutput: '文件输出',
+    fileOutputDesc: '将工作流结果写入磁盘文件',
   },
   chat: {
     title: '新对话', placeholder: '输入指令...',
@@ -34,6 +37,10 @@ const zh = {
     apiKey: 'API Key', params: '参数 (JSON)', none: '未选择',
     delete: '删除', save: '保存配置', confirmDelete: '删除此节点？',
     saved: '配置已保存', deleted: '节点已删除',
+    outputFormat: '输出格式',
+    outputDir: '输出目录',
+    fileName: '文件名',
+    template: '输出模板',
   },
   edgeMapping: {
     title: '连线映射', sourceOutput: '源输出字段',

@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { FlaskConical, Globe, Brain, Plug, RefreshCw, GripHorizontal } from "lucide-react";
+import { FlaskConical, Globe, Brain, Plug, RefreshCw, GripHorizontal, FileOutput } from "lucide-react";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
 import { fetchSkills, fetchModels, fetchApis, fetchKnowledgeBases } from "../api/api";
@@ -25,6 +25,11 @@ export default function ResourcePanel() {
   }, []);
 
   useEffect(() => { load(); }, [load]);
+
+  const onDragStartBuiltin = (e) => {
+    e.dataTransfer.setData("application/reactflow", JSON.stringify({ nodeType: "file_output", data: { name: "File Output", desc: "Write workflow result to disk", id: "builtin:file_output" } }));
+    e.dataTransfer.effectAllowed = "move";
+  };
 
   const onDragStart = (e, item, key) => {
     let nodeType = "skill";
@@ -78,6 +83,22 @@ export default function ResourcePanel() {
           </div>
         ))}
         {items.length === 0 && <div className="text-xs text-surface-600 italic text-center py-8">{t('resource.empty')}</div>}
+      </div>
+
+      {/* Built-in nodes */}
+      <div className="border-t border-surface-700/40 px-2 py-1.5">
+        <div className="text-[9px] font-medium text-surface-600 uppercase tracking-wider mb-1 px-1.5">{t('resource.builtin')}</div>
+        <div draggable onDragStart={onDragStartBuiltin}
+          className="px-2.5 py-2 rounded-xl bg-surface-800/50 border border-surface-700/30 cursor-grab active:cursor-grabbing hover:border-teal-500/40 hover:bg-surface-750/50 transition-all group">
+          <div className="flex items-center gap-1.5">
+            <GripHorizontal size={10} className="text-surface-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="w-5 h-5 rounded-md bg-teal-500/10 flex items-center justify-center shrink-0">
+              <FileOutput size={11} className="text-teal-400" />
+            </div>
+            <span className="text-xs font-medium text-surface-200 truncate flex-1">{t('resource.fileOutput')}</span>
+          </div>
+          <div className="text-[10px] text-surface-500 truncate mt-0.5 ml-[22px]">{t('resource.fileOutputDesc')}</div>
+        </div>
       </div>
     </div>
   );

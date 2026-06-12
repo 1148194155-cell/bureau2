@@ -6,6 +6,7 @@ import { createAdapter } from '../models/adapter.js';
 import { DEFAULT_MODEL_PATH, BuiltinAdapter } from '../models/builtinAdapter.js';
 import wsManager, { logExecution } from '../websocket.js';
 import { handleChatMessage } from '../ai/chatHandler.js';
+import { reviewPreExecution, reviewPostExecution } from '../review/reviewer.js';
 import { v4 as uuidv4 } from 'uuid';
 import path from 'node:path';
 import os from 'node:os';
@@ -437,6 +438,15 @@ router.post('/workflows/run', asyncHandler(async (req, res) => {
 
   const executionId = uuidv4();
 
+  const skillsList = await buildSkillsList(db);
+  const activeModels = db.prepare(
+    'SELECT * FROM models WHERE user_id = ? AND is_active = 1'
+  ).all(userId);
+  const preReview = reviewPreExecution(workflowDef, skillsList, activeModels);
+  if (preReview.status === 'fail') {
+    return res.status(422).json({ success: false, error: 'Workflow review failed', review: preReview });
+  }
+
   // Create execution record
   db.prepare(
     'INSERT INTO executions (id, workflow_id, user_id, status, start_time) VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)'
@@ -446,6 +456,9 @@ router.post('/workflows/run', asyncHandler(async (req, res) => {
     success: true,
     data: { execution_id: executionId },
   });
+
+  const reviewJson = JSON.stringify(preReview);
+  logExecution(db, wsManager, executionId, 'review', reviewJson);
 
   // Execute asynchronously (non-blocking)
   executeWorkflowAsync(executionId, workflowDef, userId, db, options || {});
@@ -524,6 +537,10 @@ async function executeWorkflowAsync(executionId, workflowDef, userId, db, option
       options,
     });
 
+    const postReview = reviewPostExecution(result.outputFiles || []);
+    const postReviewJson = JSON.stringify(postReview);
+    logExecution(db, wsManager, executionId, 'review', postReviewJson);
+
     // Update execution record
     db.prepare(
       'UPDATE executions SET status = ?, end_time = CURRENT_TIMESTAMP, output_files = ? WHERE id = ?'
@@ -544,6 +561,26 @@ async function executeWorkflowAsync(executionId, workflowDef, userId, db, option
 
     wsManager.sendError(executionId, err.message);
   }
+}
+
+async function buildSkillsList(db) {
+  const skills = await scanSkills();
+  const discovered = db.prepare(
+    'SELECT name, description, skill_path, version FROM discovered_skills'
+  ).all();
+  for (const ds of discovered) {
+    // 跳过已在 scanSkills 结果中的同名技能
+    if (skills.some(s => s.id === ds.name)) continue;
+    skills.push({
+      id: ds.name,
+      name: ds.name,
+      description: ds.description || '',
+      path: ds.skill_path,
+      entry: null,
+      type: 'discovered',
+    });
+  }
+  return skills;
 }
 
 /**

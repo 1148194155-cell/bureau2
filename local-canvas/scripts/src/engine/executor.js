@@ -134,11 +134,14 @@ export async function executeWorkflow({
   const outputFiles = sorted.map(node => {
     const data = outputs[node.id];
     if (data === undefined || data === null) return null;
+    const nodeType = node.type || node.data?.type;
     return {
       nodeId: node.id,
       nodeName: node.data?.label || node.type,
-      nodeType: node.type,
-      content: typeof data === 'string' ? data : JSON.stringify(data, null, 2)
+      nodeType,
+      content: nodeType === 'file_output' && data.filePath
+        ? data.filePath
+        : typeof data === 'string' ? data : JSON.stringify(data, null, 2)
     };
   }).filter(Boolean);
 
@@ -167,8 +170,10 @@ async function executeNode(node, inputData, { skills, adapters, onLog, timeout, 
     return inputData;
   } else if (nodeType === 'code') {
     return executeCodeNode(node, inputData, onLog, timeout);
+  } else if (nodeType === 'file_output') {
+    return executeFileOutputNode(node, inputData, onLog);
   } else {
-    throw new Error(`Unknown node type "${nodeType}". Supported types: model, llm, ai, skill, api, input, output, code`);
+    throw new Error(`Unknown node type "${nodeType}". Supported types: model, llm, ai, skill, api, input, output, code, file_output`);
   }
 }
 
@@ -315,9 +320,135 @@ async function executeCodeNode(node, inputData, onLog, timeout) {
   return result ?? {};
 }
 
-// ‚î¢„‚î¢„ Helpers ‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„‚î¢„
+/**
+ * Execute a file_output node °™ write upstream data to a file on disk.
+ *
+ * @param {object} node
+ * @param {object} inputData - upstream node output
+ * @param {function} onLog
+ * @returns {Promise<{filePath:string, format:string, fileName:string, size:number}>}
+ */
+async function executeFileOutputNode(node, inputData, onLog) {
+  const format = node.data?.config?.format || node.data?.format || 'json';
+  const outputDir = node.data?.config?.outputDir || node.data?.outputDir || path.resolve(process.cwd(), 'output');
+  const rawName = node.data?.config?.fileName || node.data?.fileName || '';
+  let baseName = rawName
+    ? rawName.replace(/[/\\:*?"<>|]/g, '_').replace(/\.\./g, '_').replace(/[^\x20-\x7E]/g, '')
+    : `output_${Date.now()}`;
+  if (rawName && !baseName) baseName = `output_${Date.now()}`;
+  baseName = baseName.replace(/[^\x00-\x7F]/g, '_').replace(/[<>:"/\\|?*]/g, '_');
+  const template = node.data?.config?.template || node.data?.template || '';
 
-function topologicalSort(nodes, edges) {
+  const actualData = (inputData && typeof inputData === 'object' && 'content' in inputData)
+    ? inputData.content
+    : inputData;
+
+  await fs.ensureDir(outputDir);
+
+  const extMap = {
+    json: '.json', csv: '.csv', html: '.html', md: '.md', txt: '.txt',
+    png: '.png', jpg: '.jpg', jpeg: '.jpeg', gif: '.gif', webp: '.webp',
+    svg: '.svg', mp4: '.mp4', webm: '.webm', mov: '.mov'
+  };
+  const ext = extMap[format] || `.${format}`;
+  const filePath = path.join(outputDir, `${baseName}${ext}`);
+
+  if (format === 'svg') {
+    const svgContent = typeof actualData === 'string' ? actualData : actualData?.data || actualData?.svg || JSON.stringify(actualData);
+    await fs.writeFile(filePath, svgContent, 'utf8');
+    const stat = await fs.stat(filePath);
+    onLog('info', `File written: ${filePath} (${stat.size} bytes, format=svg)`);
+    return { filePath, format, fileName: baseName + ext, size: stat.size };
+  }
+
+  const binaryFormats = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'mp4', 'webm', 'mov'];
+  if (binaryFormats.includes(format)) {
+    let data = actualData?.data || actualData?.base64 || actualData;
+    if (typeof data === 'string') data = data.replace(/\s/g, '');
+    await fs.writeFile(filePath, Buffer.from(data, 'base64'));
+    const stat = await fs.stat(filePath);
+    onLog('info', `File written: ${filePath} (${stat.size} bytes, format=${format})`);
+    return { filePath, format, fileName: baseName + ext, size: stat.size };
+  }
+
+  let content;
+  if (format === 'json') {
+    content = JSON.stringify(actualData, null, 2);
+  } else if (format === 'csv') {
+    content = toCsv(actualData);
+  } else if (format === 'html') {
+    content = template
+      ? renderTemplate(template, actualData)
+      : wrapHtml(typeof actualData === 'string' ? actualData : JSON.stringify(actualData, null, 2));
+  } else if (format === 'md') {
+    content = template
+      ? renderTemplate(template, actualData)
+      : toMarkdown(actualData);
+  } else if (format === 'txt') {
+    content = typeof actualData === 'string' ? actualData : JSON.stringify(actualData, null, 2);
+  } else {
+    // Unknown format: write as JSON with metadata
+    content = JSON.stringify({ format, data: actualData, note: `Format "${format}" requires a skill for native generation` }, null, 2);
+  }
+
+  await fs.writeFile(filePath, content, 'utf8');
+  const stat = await fs.stat(filePath);
+
+  onLog('info', `File written: ${filePath} (${stat.size} bytes, format=${format})`);
+  return { filePath, format, fileName: baseName + ext, size: stat.size };
+}
+
+/**
+ * Convert an array of objects to CSV string.
+ */
+function toCsv(data) {
+  const rows = Array.isArray(data) ? data : [data];
+  if (rows.length === 0) return '';
+  const keys = Object.keys(rows[0]);
+  const header = keys.map(csvEscape).join(',');
+  const body = rows.map(row => keys.map(k => csvEscape(row[k] ?? '')).join(','));
+  return [header, ...body].join('\n');
+}
+
+function csvEscape(val) {
+  const s = String(val ?? '');
+  if (s.includes(',') || s.includes('"') || s.includes('\n')) {
+    return '"' + s.replace(/"/g, '""') + '"';
+  }
+  return s;
+}
+
+/**
+ * Render {{key}} placeholders in a template with values from data.
+ */
+function renderTemplate(tmpl, data) {
+  return tmpl.replace(/\{\{\s*(\S+?)\s*\}\}/g, (_, key) => {
+    const val = getNestedValue(data, key);
+    return val !== undefined ? String(val) : `{{${key}}}`;
+  });
+}
+
+function wrapHtml(body) {
+  return `<!DOCTYPE html>\n<html lang="en">\n<head><meta charset="UTF-8"><title>Output</title></head>\n<body>\n${body}\n</body>\n</html>`;
+}
+
+/**
+ * Convert input data to a simple Markdown key-value listing.
+ */
+function toMarkdown(data) {
+  if (typeof data === 'string') return data;
+  if (typeof data !== 'object' || data === null) return String(data);
+  const lines = [];
+  for (const [k, v] of Object.entries(data)) {
+    const val = typeof v === 'object' ? JSON.stringify(v, null, 2) : String(v);
+    lines.push(`- **${k}**: ${val}`);
+  }
+  return lines.join('\n');
+}
+
+// Helpers
+
+export function topologicalSort(nodes, edges) {
   const adj = {};
   const inDeg = {};
 
@@ -360,7 +491,7 @@ function topologicalSort(nodes, edges) {
 
 function buildNodeInput(node, edges, outputs) {
   const incomingEdges = edges.filter(e => e.target === node.id);
-  if (incomingEdges.length === 0) return {};
+  if (incomingEdges.length === 0) return node.data?.config || {};
 
   const input = {};
   for (const edge of incomingEdges) {

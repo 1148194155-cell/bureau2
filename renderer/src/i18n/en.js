@@ -19,6 +19,9 @@ const en = {
     skills: 'Skills', knowledge: 'Knowledge', models: 'Models', apis: 'APIs',
     refresh: 'Refresh', empty: 'Empty', online: 'Online', offline: 'Offline',
     loadFailed: 'Failed to load',
+    builtin: 'Built-in Nodes',
+    fileOutput: 'File Output',
+    fileOutputDesc: 'Write workflow result to disk',
   },
   chat: {
     title: 'New Chat', placeholder: 'Type a command...',
@@ -34,6 +37,10 @@ const en = {
     apiKey: 'API Key', params: 'Params (JSON)', none: 'None',
     delete: 'Delete', save: 'Save', confirmDelete: 'Delete this node?',
     saved: 'Config saved', deleted: 'Node deleted',
+    outputFormat: 'Output Format',
+    outputDir: 'Output Directory',
+    fileName: 'File Name',
+    template: 'Output Template',
   },
   edgeMapping: {
     title: 'Edge Mapping', sourceOutput: 'Source Output',

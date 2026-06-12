@@ -5,9 +5,10 @@ import toast from "react-hot-toast";
 import SkillNode from "./customNodes/SkillNode";
 import KnowledgeNode from "./customNodes/KnowledgeNode";
 import OutputNode from "./customNodes/OutputNode";
+import FileOutputNode from "./customNodes/FileOutputNode";
 import useStore from "../store/store";
 
-const nodeTypes = { skill: SkillNode, knowledge: KnowledgeNode, output: OutputNode };
+const nodeTypes = { skill: SkillNode, knowledge: KnowledgeNode, output: OutputNode, file_output: FileOutputNode };
 const defaultEdgeOptions = { style: { stroke: "#3b4148", strokeWidth: 1.5, strokeDasharray: "6 3" }, animated: true };
 
 export default function Canvas() {
@@ -60,7 +61,7 @@ export default function Canvas() {
         proOptions={{ hideAttribution: true }} className="!bg-transparent" multiSelectionKeyCode="Shift">
         <Controls className="!bg-surface-850 !border-surface-700/40 !rounded-xl !shadow-lg" />
         <MiniMap className="!bg-surface-850 !border-surface-700/40"
-          nodeColor={(n) => { if (n.type === "skill") return "#059669"; if (n.type === "knowledge") return "#7c3aed"; if (n.type === "output") return "#d97706"; return "#6b7280"; }}
+          nodeColor={(n) => { if (n.type === "skill") return "#059669"; if (n.type === "knowledge") return "#7c3aed"; if (n.type === "output") return "#d97706"; if (n.type === "file_output") return "#14b8a6"; return "#6b7280"; }}
           maskColor="rgba(0,0,0,0.6)" />
         <Background variant={BackgroundVariant.Dots} gap={32} size={0.7} color="#2b3138" />
       </ReactFlow>
