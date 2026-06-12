@@ -2,7 +2,7 @@
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
 
-![截图](test_screenshots/step4_drag1.png)
+![截图](test_screenshots/step5_workflow.png)
 
 拖拽节点即可构建 AI 工作流。完全本地运行，支持多模型切换、知识库 RAG、API 集成和内置 AI 对话。
 
