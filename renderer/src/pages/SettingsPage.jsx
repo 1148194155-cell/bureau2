@@ -9,7 +9,7 @@ export default function SettingsPage() {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState("models");
   const [panel, setPanel] = useState(null);
-  const { models, apiKeys, knowledgeBases, setModels, setApiKeys, setKnowledgeBases } = useStore();
+  const { models, apiKeys, knowledgeBases, outputDir, setModels, setApiKeys, setKnowledgeBases, setOutputDir } = useStore();
 
   const TABS = [
     { key: "models", label: t('settings.tabs.models'), icon: Globe },
@@ -18,11 +18,15 @@ export default function SettingsPage() {
   ];
 
   const loadAll = useCallback(async () => {
-    try {
-      const [m, k, kb] = await Promise.all([fetchModels(), fetchApiKeys(), fetchKnowledgeBases()]);
-      setModels(m); setApiKeys(k); setKnowledgeBases(kb);
-    } catch { toast.error(t('settings.loadFailed')); }
-  }, []);
+    const results = await Promise.allSettled([fetchModels(), fetchApiKeys(), fetchKnowledgeBases()]);
+    const setters = [setModels, setApiKeys, setKnowledgeBases];
+    let anyFailed = false;
+    results.forEach((r, i) => {
+      if (r.status === 'fulfilled') setters[i](r.value);
+      else anyFailed = true;
+    });
+    if (anyFailed) toast.error(t('settings.loadFailed'));
+  }, [t]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
 
@@ -43,16 +47,28 @@ export default function SettingsPage() {
         ))}
       </div>
 
+      {/* Global output directory config */}
+      <div className="px-5 py-3 border-b border-surface-700/40 flex items-center gap-3">
+        <span className="text-[10px] font-medium text-surface-400 uppercase tracking-wide">输出目录</span>
+        <input
+          value={outputDir || ''}
+          onChange={(e) => setOutputDir(e.target.value)}
+          placeholder="默认: ~/localcanvas-output/"
+          className="flex-1 h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 outline-none focus:border-accent-500/40"
+        />
+        <span className="text-[10px] text-surface-500">FileOutput 节点的默认输出路径</span>
+      </div>
+
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-y-auto p-5">
           {activeTab === "models" && <ModelList models={models} onAdd={() => setPanel({ type: "addModel" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteModel(id); toast.success(t('settings.deleted')); loadAll(); } }} />}
           {activeTab === "apikeys" && <KeyList apiKeys={apiKeys} onAdd={() => setPanel({ type: "addKey" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteApiKey(id); toast.success(t('settings.deleted')); loadAll(); } }} />}
-          {activeTab === "knowledge" && <KnowledgeList knowledgeBases={knowledgeBases} models={models} onAdd={() => setPanel({ type: "addKB" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteKnowledgeBase(id); toast.success(t('settings.deleted')); loadAll(); } }} onIndex={async (id) => { await indexKnowledgeBase(id, models[0]?.id); toast.success(t('settings.indexed')); loadAll(); }} />}
+          {activeTab === "knowledge" && <KnowledgeList knowledgeBases={knowledgeBases} models={models} onAdd={() => setPanel({ type: "addKB" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteKnowledgeBase(id); toast.success(t('settings.deleted')); loadAll(); } }} onIndex={async (id) => { await indexKnowledgeBase(id, models.find(m => m.adapter_type === 'builtin' || m.adapter_type === 'openai')?.id); toast.success(t('settings.indexed')); loadAll(); }} />}
         </div>
 
         {panel && (
           <div className="w-80 bg-surface-850 border-l border-surface-700/40 flex flex-col shrink-0 animate-slide-right">
-            <SettingsPanel type={panel.type} onClose={() => setPanel(null)} onDone={() => { setPanel(null); loadAll(); }} />
+            <SettingsPanel key={panel.type} type={panel.type} onClose={() => setPanel(null)} onDone={() => { setPanel(null); loadAll(); }} />
           </div>
         )}
       </div>
@@ -91,7 +107,7 @@ function SettingsPanel({ type, onClose, onDone }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
         {type === "addModel" && <>
           <F label={t('settings.name')}><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="GPT-4o" className={inputCls} /></F>
-          <F label={t('settings.adapter')}><select value={form.adapter_type} onChange={(e) => setForm({ ...form, adapter_type: e.target.value })} className={inputCls}><option value="openai">OpenAI</option><option value="ollama">Ollama</option><option value="anthropic">Anthropic</option></select></F>
+          <F label={t('settings.adapter')}><select value={form.adapter_type} onChange={(e) => setForm({ ...form, adapter_type: e.target.value })} className={inputCls}><option value="openai">OpenAI</option><option value="ollama">Ollama</option><option value="anthropic">Anthropic</option><option value="llamacpp">llama.cpp</option></select></F>
           <F label={t('settings.endpoint')}><input value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} placeholder="https://api.openai.com/v1" className={inputCls} /></F>
           <F label={t('settings.modelId')}><input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="gpt-4o" className={inputCls} /></F>
           <F label={t('settings.key')}><input type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder="sk-..." className={inputCls} /></F>
@@ -134,7 +150,7 @@ function ModelList({ models, onAdd, onDelete }) {
           </div>
         </div>
       ))}
-      {models.length === 0 && <div className="text-center py-12 text-surface-500 text-xs">{t('settings.tabs.models')} 鈥?{t('resource.empty')}</div>}
+      {models.length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.models')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
     </div>
   );
 }
@@ -154,7 +170,7 @@ function KeyList({ apiKeys, onAdd, onDelete }) {
           <button onClick={() => onDelete(k.id)} className="w-6 h-6 flex items-center justify-center rounded-md text-surface-600 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
         </div>
       ))}
-      {apiKeys.length === 0 && <div className="text-center py-12 text-surface-500 text-xs">{t('settings.tabs.apikeys')} 鈥?{t('resource.empty')}</div>}
+      {apiKeys.length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.apikeys')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
     </div>
   );
 }
@@ -180,7 +196,7 @@ function KnowledgeList({ knowledgeBases, models, onAdd, onDelete, onIndex }) {
           </div>
         </div>
       ))}
-      {knowledgeBases.length === 0 && <div className="text-center py-12 text-surface-500 text-xs">{t('settings.tabs.knowledge')} 鈥?{t('resource.empty')}</div>}
+      {knowledgeBases.length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.knowledge')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
     </div>
   );
 }

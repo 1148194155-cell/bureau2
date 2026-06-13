@@ -29,7 +29,9 @@ fs.ensureDirSync(path.join(os.homedir(), '.localcanvas', 'keys'));
 
 // Initialize database
 const db = initDatabase();
-autoDiscover(db);
+autoDiscover(db).catch(err => {
+  console.error('[AutoDiscover] Startup discovery failed:', err.message);
+});
 
 // Register built-in model adapter
 registerAdapter('builtin', BuiltinAdapter);

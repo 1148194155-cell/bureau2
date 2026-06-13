@@ -2,7 +2,7 @@
 
 const api = axios.create({
   baseURL: "/api",
-  timeout: 120000,  // 延长到 120 秒，本地大模型推理需要更长时间
+  timeout: 30000,
   headers: { "Content-Type": "application/json", "X-User-Id": "1" },
 });
 
@@ -108,10 +108,10 @@ export async function getExecutionStatus(executionId) {
 }
 
 // --- AI Chat ---
-export async function aiChat({ message, history, canvas_state, model_id, lang }) {
+export async function aiChat({ message, history, canvas_state, model_id, lang }, signal) {
   const { data } = await api.post("/ai/chat",
     { message, history, canvas_state, model_id, lang },
-    { timeout: 120000 }   // builtin 模型首响应 26-40s
+    { timeout: 120000, signal }   // builtin 模型首响应 26-40s
   );
   return data.data;
 }

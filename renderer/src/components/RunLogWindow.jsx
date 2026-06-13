@@ -7,7 +7,10 @@ export default function RunLogWindow() {
   const { t } = useI18n();
   const { runLogOpen, setRunLogOpen, executionLogs, executionStatus } = useStore();
   const [isDragging, setIsDragging] = useState(false);
-  const [pos, setPos] = useState({ x: -420, y: 100 });
+  const [pos, setPos] = useState(() => {
+    // Center the window on initial open
+    return { x: Math.max(40, (window.innerWidth - 400) / 2), y: Math.max(60, (window.innerHeight - 320) / 2) };
+  });
   const dragRef = useRef(null);
   const offset = useRef({ x: 0, y: 0 });
 
@@ -33,7 +36,7 @@ export default function RunLogWindow() {
   return (
     <div
       className="fixed z-50 w-[400px] h-[320px] bg-[#0a0a0a] border border-surface-700/50 rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-pop-in"
-      style={{ top: pos.y, right: -pos.x, left: "auto" }}
+      style={{ left: pos.x, top: pos.y, right: "auto" }}
     >
       {/* Title bar (draggable) */}
       <div

@@ -1,7 +1,6 @@
 import { topologicalSort } from '../engine/executor.js';
 import fs from 'fs-extra';
 import path from 'node:path';
-import os from 'node:os';
 
 const SUPPORTED_OUTPUT_FORMATS = [
   'json', 'csv', 'html', 'md', 'txt',
@@ -77,7 +76,9 @@ export function reviewPostExecution(outputFiles) {
               });
             }
           }
-        } catch {}
+        } catch {
+          console.warn(`[Reviewer] Failed to stat output file: ${fp}`);
+        }
       }
     }
     if (fo.size === 0) {

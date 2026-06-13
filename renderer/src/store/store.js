@@ -46,7 +46,7 @@ const useStore = create((set, get) => ({
   undoStack: [], redoStack: [],
   _pushUndo: () => {
     const { nodes, edges, undoStack } = get();
-    set({ undoStack: [...undoStack.slice(-49), { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }], redoStack: [] });
+    set({ undoStack: [...undoStack.slice(-49), { nodes: structuredClone(nodes), edges: structuredClone(edges) }], redoStack: [] });
   },
   undo: () => {
     const { undoStack, nodes, edges } = get();
@@ -54,7 +54,7 @@ const useStore = create((set, get) => ({
     const prev = undoStack[undoStack.length - 1];
     set({
       undoStack: undoStack.slice(0, -1),
-      redoStack: [...get().redoStack, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }],
+      redoStack: [...get().redoStack, { nodes: structuredClone(nodes), edges: structuredClone(edges) }],
       nodes: prev.nodes, edges: prev.edges,
     });
   },
@@ -64,7 +64,7 @@ const useStore = create((set, get) => ({
     const next = redoStack[redoStack.length - 1];
     set({
       redoStack: redoStack.slice(0, -1),
-      undoStack: [...get().undoStack, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }],
+      undoStack: [...get().undoStack, { nodes: structuredClone(nodes), edges: structuredClone(edges) }],
       nodes: next.nodes, edges: next.edges,
     });
   },
@@ -97,6 +97,10 @@ const useStore = create((set, get) => ({
   setCurrentWorkflowId: (id) => set({ currentWorkflowId: id }),
   setCurrentWorkflowName: (n) => set({ currentWorkflowName: n }),
 
+  // --- Output directory (default for FileOutput nodes) ---
+  outputDir: "",  // empty = use per-node config or system default
+  setOutputDir: (d) => set({ outputDir: d }),
+
   // --- Run log ---
   runLogOpen: false,
   setRunLogOpen: (o) => set({ runLogOpen: o }),
@@ -104,6 +108,10 @@ const useStore = create((set, get) => ({
   // --- Settings side panel ---
   settingsPanel: null,
   setSettingsPanel: (p) => set({ settingsPanel: p }),
+
+  // --- Page navigation (from AI chat) ---
+  navigateToPage: null,
+  setNavigateToPage: (p) => set({ navigateToPage: p }),
 
   // --- AI panel width ---
   aiPanelWidth: 400,

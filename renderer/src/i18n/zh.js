@@ -13,11 +13,11 @@ const zh = {
     emptyCanvas: '画布为空',
     noSaved: '没有已保存的工作流',
     saved: '已保存', loaded: '已加载: ', exported: '已导出',
-    started: '已启动', cleared: '已清空',
+    started: '已启动', cleared: '已清空', runFailed: '启动失败', running: '执行中…',
   },
   resource: {
     skills: 'Skills', knowledge: '知识库', models: '模型', apis: 'API',
-    refresh: '刷新', empty: '暂无', online: '在线', offline: '离线',
+    refresh: '刷新', empty: '暂无', online: '在线', offline: '离线', emptyHint: '点击 + 按钮添加第一个',
     loadFailed: '加载失败',
     builtin: '内置节点',
     fileOutput: '文件输出',

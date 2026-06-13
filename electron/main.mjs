@@ -21,6 +21,9 @@ function createWindow() {
     },
   });
 
+  // Disable default Electron menu so Ctrl+S/Ctrl+E pass through to the app
+  Menu.setApplicationMenu(null);
+
   if (!app.isPackaged) {
     mainWindow.loadURL("http://localhost:5173");
     mainWindow.webContents.openDevTools({ mode: "detach" });

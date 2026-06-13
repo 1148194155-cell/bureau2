@@ -105,8 +105,10 @@ class WebSocketManager {
     });
 
     for (const ws of subscribers) {
-      if (ws.readyState === 1) { // OPEN
-        ws.send(payload);
+      if (ws.readyState === 1) {
+        try { ws.send(payload); } catch { subscribers.delete(ws); }
+      } else {
+        subscribers.delete(ws);
       }
     }
   }
@@ -126,8 +128,9 @@ class WebSocketManager {
 
     for (const ws of subscribers) {
       if (ws.readyState === 1) {
-        ws.send(payload);
-        ws.send(JSON.stringify({ type: 'done' }));
+        try { ws.send(payload); } catch { subscribers.delete(ws); }
+      } else {
+        subscribers.delete(ws);
       }
     }
   }
@@ -146,7 +149,9 @@ class WebSocketManager {
 
     for (const ws of subscribers) {
       if (ws.readyState === 1) {
-        ws.send(payload);
+        try { ws.send(payload); } catch { subscribers.delete(ws); }
+      } else {
+        subscribers.delete(ws);
       }
     }
   }
@@ -184,6 +189,7 @@ function sendExistingLogs(ws, execId) {
     }
   } catch {
     // DB might not be ready — skip history
+    console.warn('[WS] Failed to send existing logs for', execId);
   }
 }
 

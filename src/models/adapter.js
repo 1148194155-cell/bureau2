@@ -222,15 +222,23 @@ export class LlamaCppAdapter extends BaseModelAdapter {
   }
 
   async embed(texts) {
-    const res = await fetch(`${this.endpoint}/embedding`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: texts[0] || '' }),
-      signal: AbortSignal.timeout(30000),
-    });
-    if (!res.ok) throw new Error(`llama.cpp embed error ${res.status}`);
-    const data = await res.json();
-    return data.embedding ? [data.embedding] : [];
+    const results = [];
+    for (const text of texts) {
+      try {
+        const res = await fetch(`${this.endpoint}/embedding`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: text || ' ' }),
+          signal: AbortSignal.timeout(30000),
+        });
+        if (!res.ok) throw new Error(`llama.cpp embed error ${res.status}`);
+        const data = await res.json();
+        results.push(data.embedding || []);
+      } catch {
+        results.push(null);
+      }
+    }
+    return results;
   }
 
   async ping() {
@@ -350,11 +358,11 @@ export function createAdapter(model) {
   const config = typeof model.config === 'string' ? JSON.parse(model.config) : model.config;
 
   // Decrypt apiKey if it was stored encrypted
-  if (config.apiKey) {
+  if (config.apiKey && config.apiKey.includes(':')) {
     try {
       config.apiKey = decrypt(config.apiKey);
     } catch {
-      // If decryption fails, apiKey is likely plaintext (legacy) — use as-is
+      console.warn(`[Adapter] Failed to decrypt apiKey for "${model.name}" — using as-is (may cause auth failure)`);
     }
   }
 
@@ -367,8 +375,8 @@ export function createAdapter(model) {
  * @param {typeof BaseModelAdapter} adapterClass
  */
 export function registerAdapter(type, adapterClass) {
-  if (!(adapterClass.prototype instanceof BaseModelAdapter)) {
-    throw new Error('Adapter must extend BaseModelAdapter');
+  if (typeof adapterClass !== 'function' || !(adapterClass.prototype instanceof BaseModelAdapter)) {
+    throw new Error('Adapter must be a class extending BaseModelAdapter');
   }
   ADAPTER_MAP[type] = adapterClass;
 }

@@ -19,6 +19,11 @@ if (process.platform === "darwin") {
 }
 
 function createWindow() {
+  const preloadPath = path.join(__dirname, "preload.js");
+  if (!require("fs").existsSync(preloadPath)) {
+    console.warn("[Main] preload.js not found, window may lack Electron APIs");
+  }
+
   mainWindow = new BrowserWindow({
     width: 1440,
     height: 900,
@@ -28,7 +33,7 @@ function createWindow() {
     backgroundColor: "#1a1b1e",
     icon: path.join(__dirname, "icon.png"),
     webPreferences: {
-      preload: path.join(__dirname, "preload.js"),
+      preload: preloadPath,
       nodeIntegration: false,
       contextIsolation: true,
     },

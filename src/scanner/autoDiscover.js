@@ -70,7 +70,7 @@ async function discoverModels(db) {
   // Auto-detect Ollama
   try {
     const { execSync } = await import('node:child_process');
-    const output = execSync('ollama list', { encoding: 'utf8', timeout: 5000 });
+    const output = execSync('ollama list', { encoding: 'utf8', timeout: 2000 });
     const lines = output.trim().split('\n').slice(1);
     for (const line of lines) {
       const parts = line.trim().split(/\s+/);
@@ -91,7 +91,7 @@ async function discoverModels(db) {
       }
     }
   } catch {
-    // Ollama not available
+    console.warn('[AutoDiscover] ollama not found or not running — skip');
   }
 
   // Auto-detect llama.cpp
@@ -114,7 +114,7 @@ async function discoverModels(db) {
       }
     }
   } catch {
-    // llama.cpp not available
+    console.warn('[AutoDiscover] llama.cpp not reachable — skip');
   }
 
   // If still no models at all, seed a default entry so the UI isn't empty
@@ -185,8 +185,17 @@ async function discoverKnowledgeBases(db) {
   let count = 0;
 
   // 取一个可用模型做 embeddings
-  const model = db.prepare('SELECT id FROM models WHERE is_active = 1 LIMIT 1').get();
-  const modelId = model ? model.id : null;
+  const model = db.prepare('SELECT * FROM models WHERE is_active = 1 LIMIT 1').get();
+  let embedFn = null;
+  if (model) {
+    try {
+      const { createAdapter } = await import('../models/adapter.js');
+      const adapter = createAdapter(model);
+      embedFn = (texts) => adapter.embed(texts);
+    } catch {
+      console.warn('[AutoDiscover] Failed to create embedding adapter — indexing without embeddings');
+    }
+  }
 
   for (const row of rows) {
     const skillDir = row.skill_path;
@@ -210,9 +219,9 @@ async function discoverKnowledgeBases(db) {
     console.log(`  + Knowledge: ${name}`);
 
     // 自动索引（不阻塞启动，异步跑）
-    if (modelId) {
+    if (embedFn) {
       const { indexKnowledgeBase } = await import('./skillScanner.js');
-      indexKnowledgeBase(db, kbId, skillDir, null).then(result => {
+      indexKnowledgeBase(db, kbId, skillDir, embedFn).then(result => {
         console.log(`    -> Indexed ${name}: ${result?.totalChunks || 0} chunks`);
       }).catch(err => {
         console.warn(`    -> Index failed for ${name}: ${err.message}`);
@@ -234,5 +243,4 @@ function parseFrontmatter(md) {
   }
 }
 
-// ensureTable is called by the recursive walker; table already exists in db.js
-function ensureTable() {}
+

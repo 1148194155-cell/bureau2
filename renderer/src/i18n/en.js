@@ -13,11 +13,11 @@ const en = {
     emptyCanvas: 'Canvas is empty',
     noSaved: 'No saved workflows',
     saved: 'Saved', loaded: 'Loaded: ', exported: 'Exported',
-    started: 'Running', cleared: 'Cleared',
+    started: 'Running', cleared: 'Cleared', runFailed: 'Run failed', running: 'Running…',
   },
   resource: {
     skills: 'Skills', knowledge: 'Knowledge', models: 'Models', apis: 'APIs',
-    refresh: 'Refresh', empty: 'Empty', online: 'Online', offline: 'Offline',
+    refresh: 'Refresh', empty: 'Empty', online: 'Online', offline: 'Offline', emptyHint: 'Click + to add your first entry',
     loadFailed: 'Failed to load',
     builtin: 'Built-in Nodes',
     fileOutput: 'File Output',

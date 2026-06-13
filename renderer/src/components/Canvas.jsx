@@ -28,7 +28,7 @@ export default function Canvas() {
   }, [addNode, _pushUndo]);
 
   const onNodeDoubleClick = useCallback((_, node) => {
-    const el = document.querySelector('.react-flow__node[id="' + node.id + '"]');
+    const el = document.querySelector(`.react-flow__node[id="${node.id}"]`);
     setSelectedNode(node, el);
   }, [setSelectedNode]);
 
@@ -58,7 +58,9 @@ export default function Canvas() {
         onNodeDoubleClick={onNodeDoubleClick} onPaneClick={() => setSelectedNode(null, null)}
         nodeTypes={nodeTypes} defaultEdgeOptions={defaultEdgeOptions}
         fitView deleteKeyCode={["Backspace", "Delete"]}
-        proOptions={{ hideAttribution: true }} className="!bg-transparent" multiSelectionKeyCode="Shift">
+        connectionMode="loose"
+        connectionLineStyle={{ stroke: '#059669', strokeWidth: 2 }}
+        multiSelectionKeyCode="Shift" className="!bg-transparent">
         <Controls className="!bg-surface-850 !border-surface-700/40 !rounded-xl !shadow-lg" />
         <MiniMap className="!bg-surface-850 !border-surface-700/40"
           nodeColor={(n) => { if (n.type === "skill") return "#059669"; if (n.type === "knowledge") return "#7c3aed"; if (n.type === "output") return "#d97706"; if (n.type === "file_output") return "#14b8a6"; return "#6b7280"; }}

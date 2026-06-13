@@ -1,12 +1,19 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import CanvasPage from "./pages/CanvasPage";
 import SettingsPage from "./pages/SettingsPage";
 import { Settings, Layers, Zap } from "lucide-react";
 import { useI18n } from "./i18n";
+import useStore from "./store/store";
 
 export default function App() {
   const [page, setPage] = useState("canvas");
   const { t, lang, setLang } = useI18n();
+  const navigateTo = useStore(s => s.navigateToPage);
+  const setNavigateTo = useStore(s => s.setNavigateToPage);
+
+  useEffect(() => {
+    if (navigateTo) { setPage(navigateTo); setNavigateTo(null); }
+  }, [navigateTo]);
 
   return (
     <div className="h-full flex flex-col bg-surface-950">
@@ -51,7 +58,12 @@ export default function App() {
       </nav>
 
       <div className="flex-1 overflow-hidden">
-        {page === "canvas" ? <CanvasPage /> : <SettingsPage />}
+        <div style={{ display: page === "canvas" ? "flex" : "none" }} className="h-full flex-col">
+          <CanvasPage />
+        </div>
+        <div style={{ display: page === "settings" ? "flex" : "none" }} className="h-full flex-col">
+          <SettingsPage />
+        </div>
       </div>
     </div>
   );

@@ -21,9 +21,20 @@ export default function NodeConfigPopover() {
     }
   }, [selectedNode, selectedNodeEl]);
 
+  // 切换节点时重置 config 为节点已有配置（深拷贝避免引用共享）
+  useEffect(() => {
+    if (selectedNode) {
+      setConfig(JSON.parse(JSON.stringify(selectedNode.data?.config || {})));
+    }
+  }, [selectedNode?.id]);
+
   useEffect(() => {
     if (!selectedNode) return;
-    const handler = (e) => { if (popoverRef.current && !popoverRef.current.contains(e.target)) setSelectedNode(null, null); };
+    const handler = (e) => {
+      // 忽略 select 下拉选项的点击（浏览器原生下拉在 DOM 之外，contains 为 false）
+      if (e.target.closest('select')) return;
+      if (popoverRef.current && !popoverRef.current.contains(e.target)) setSelectedNode(null, null);
+    };
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, [selectedNode]);
@@ -36,7 +47,13 @@ export default function NodeConfigPopover() {
   const color = TYPE_COLORS[node.type] || "accent";
 
   const handleSave = () => {
-    updateNodeData(node.id, { config: { ...nodeData.config, ...config } });
+    // 用 config 覆盖 nodeData.config，显式传递 null/undefined/空字符串以支持清空字段
+    const merged = { ...nodeData.config };
+    for (const [k, v] of Object.entries(config)) {
+      if (v === undefined) delete merged[k];
+      else merged[k] = v;
+    }
+    updateNodeData(node.id, { config: merged });
     setSelectedNode(null, null);
     toast.success(t('nodeConfig.saved'));
   };
@@ -96,7 +113,7 @@ export default function NodeConfigPopover() {
               <select value={config.format || nodeData.config?.format || "json"}
                 onChange={(e) => setConfig({ ...config, format: e.target.value })}
                 className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs outline-none">
-                {['txt','json','csv','html','md','pdf','docx','xlsx','pptx','png','svg'].map(f => (
+                {['txt','json','csv','html','md','png','svg'].map(f => (
                   <option key={f} value={f}>{f.toUpperCase()}</option>
                 ))}
               </select>

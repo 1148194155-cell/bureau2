@@ -16,21 +16,42 @@ export class BuiltinAdapter extends BaseModelAdapter {
     this._model = null;
     this._session = null;
     this._ready = false;
+    this._loading = false;
+    this._loadError = null;
     this._error = null;
   }
 
   async _ensureLoaded() {
     if (this._ready) return;
-    if (!fs.existsSync(this.modelPath)) {
-      throw new Error(`模型文件未找到: ${this.modelPath}`);
+    if (this._loading) {
+      // Another caller is already loading — wait for it
+      let attempts = 0;
+      while (this._loading && attempts < 600) {
+        await new Promise(r => setTimeout(r, 100));
+        attempts++;
+      }
+      if (this._ready) return;
+      if (this._loadError) throw new Error(`Builtin model failed to load: ${this._loadError.message}`);
+      throw new Error('Builtin model loading timed out');
     }
-    const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
-    this._llama = await getLlama();
-    this._model = await this._llama.loadModel({ modelPath: this.modelPath });
-    const context = await this._model.createContext();
-    const sequence = context.getSequence();
-    this._session = new LlamaChatSession({ contextSequence: sequence });
-    this._ready = true;
+    this._loading = true;
+    try {
+      if (!fs.existsSync(this.modelPath)) {
+        throw new Error(`模型文件未找到: ${this.modelPath}`);
+      }
+      const { getLlama, LlamaChatSession } = await import('node-llama-cpp');
+      this._llama = await getLlama();
+      this._model = await this._llama.loadModel({ modelPath: this.modelPath });
+      const context = await this._model.createContext();
+      const sequence = context.getSequence();
+      this._session = new LlamaChatSession({ contextSequence: sequence });
+      this._ready = true;
+    } catch (err) {
+      this._loadError = err;
+      throw err;
+    } finally {
+      this._loading = false;
+    }
   }
 
   async chat(messages, options = {}) {
@@ -139,6 +160,12 @@ export class BuiltinAdapter extends BaseModelAdapter {
   }
 
   async ping() {
-    return this._ready || fs.existsSync(this.modelPath);
+    if (!fs.existsSync(this.modelPath)) return false;
+    try {
+      await import('node-llama-cpp');
+      return true;
+    } catch {
+      return false;
+    }
   }
 }

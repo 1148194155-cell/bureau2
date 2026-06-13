@@ -2,7 +2,6 @@ import { spawn } from 'node:child_process';
 import vm from 'node:vm';
 import path from 'node:path';
 import fs from 'fs-extra';
-import { v4 as uuidv4 } from 'uuid';
 
 /**
  * Workflow Execution Engine
@@ -42,13 +41,12 @@ export async function executeWorkflow({
   // 1. Topological sort
   const sorted = topologicalSort(nodes, edges);
   if (!sorted) {
-    throw new Error('Workflow contains a cycle â€?cannot execute');
+    throw new Error('Workflow contains a cycle ¡ª cannot execute');
   }
 
   onLog('info', `Workflow execution started with ${sorted.length} nodes in order`);
 
   // Build adjacency data: which edges feed into which node
-  const nodeOutputs = {};
   const results = [];
 
   // 2. Execute in topological order (parallel for independent nodes)
@@ -103,10 +101,11 @@ export async function executeWorkflow({
             timeout,
             retryCount,
             retryDelay,
+            outputDir: options.outputDir,
           });
 
           outputs[node.id] = result;
-          onLog('debug', `Node ${node.id} output type: ${typeof result}, isEmpty: ${JSON.stringify(result) === '{}' ? 'YES' : 'NO'}`);
+          onLog('debug', `Node ${node.id} output type: ${typeof result}, isEmpty: ${result && typeof result === 'object' && Object.keys(result).length === 0 ? 'YES' : 'NO'}`);
           results.push({ nodeId: node.id, nodeName: node.data?.label || node.type, success: true, output: result });
           onLog('info', `Node "${node.data?.label || node.id}" completed successfully`);
 
@@ -127,7 +126,6 @@ export async function executeWorkflow({
       })
     );
 
-    if (batchResults.some(r => r === undefined)) break; // error occurred
   }
 
   // 3. Collect all node outputs structured
@@ -157,7 +155,7 @@ export async function executeWorkflow({
 /**
  * Execute a single node.
  */
-async function executeNode(node, inputData, { skills, adapters, onLog, timeout, retryCount, retryDelay }) {
+async function executeNode(node, inputData, { skills, adapters, onLog, timeout, retryCount, retryDelay, outputDir }) {
   const nodeType = node.type || node.data?.type;
 
   if (nodeType === 'skill') {
@@ -168,12 +166,15 @@ async function executeNode(node, inputData, { skills, adapters, onLog, timeout, 
     return node.data?.input || inputData || {};
   } else if (nodeType === 'output') {
     return inputData;
+  } else if (nodeType === 'knowledge') {
+    // Knowledge node passes through upstream data for RAG-style processing
+    return inputData;
   } else if (nodeType === 'code') {
     return executeCodeNode(node, inputData, onLog, timeout);
   } else if (nodeType === 'file_output') {
-    return executeFileOutputNode(node, inputData, onLog);
+    return executeFileOutputNode(node, inputData, onLog, { outputDir });
   } else {
-    throw new Error(`Unknown node type "${nodeType}". Supported types: model, llm, ai, skill, api, input, output, code, file_output`);
+    throw new Error(`Unknown node type "${nodeType}". Supported types: model, llm, ai, skill, input, output, code, file_output`);
   }
 }
 
@@ -201,7 +202,7 @@ async function executeSkillNode(node, inputData, skills, adapters, onLog, timeou
     if (!description && skill.path) {
       try {
         const mdPath = path.join(skill.path, 'SKILL.md');
-        description = fs.readFileSync(mdPath, 'utf8');
+        description = await fs.readFile(mdPath, 'utf8');
         if (description) {
           onLog('info', `Loaded SKILL.md content for "${skill.name}" (${description.length} chars)`);
         }
@@ -263,6 +264,7 @@ async function executeSkillNode(node, inputData, skills, adapters, onLog, timeou
       return typeof result === 'string' ? safeParseJson(result) : result;
     } catch (err) {
       lastError = err;
+      onLog('warn', `Skill "${skillId}" attempt ${attempt + 1} failed: ${err.message}`);
     }
   }
 
@@ -317,11 +319,16 @@ async function executeCodeNode(node, inputData, onLog, timeout) {
   const code = node.data?.code || '';
   if (!code) return inputData || {};
 
-  const sandbox = { input: inputData, onLog, console };
+  const sandboxConsole = {
+    log: (...args) => onLog('info', `[code] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`),
+    error: (...args) => onLog('error', `[code] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`),
+    warn: (...args) => onLog('warn', `[code] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`),
+  };
+  const sandbox = { input: inputData, onLog, console: sandboxConsole };
   const context = vm.createContext(sandbox);
   const script = new vm.Script(code);
 
-  const result = script.runInContext(context, { timeout: timeout || 5000 });
+  const result = script.runInContext(context, { timeout: timeout || 5000, breakOnSigint: true });
   return result ?? {};
 }
 
@@ -333,9 +340,9 @@ async function executeCodeNode(node, inputData, onLog, timeout) {
  * @param {function} onLog
  * @returns {Promise<{filePath:string, format:string, fileName:string, size:number}>}
  */
-async function executeFileOutputNode(node, inputData, onLog) {
+async function executeFileOutputNode(node, inputData, onLog, options = {}) {
   const format = node.data?.config?.format || node.data?.format || 'json';
-  const outputDir = node.data?.config?.outputDir || node.data?.outputDir || path.resolve(process.cwd(), 'output');
+  const outputDir = node.data?.config?.outputDir || node.data?.outputDir || options.outputDir || path.resolve(process.cwd(), 'output');
   const rawName = node.data?.config?.fileName || node.data?.fileName || '';
   let baseName = rawName
     ? rawName.replace(/[/\\:*?"<>|]/g, '_').replace(/\.\./g, '_').replace(/[\x00-\x1F]/g, '')
@@ -370,7 +377,11 @@ async function executeFileOutputNode(node, inputData, onLog) {
   if (binaryFormats.includes(format)) {
     let data = actualData?.data || actualData?.base64 || actualData;
     if (typeof data === 'string') data = data.replace(/\s/g, '');
-    await fs.writeFile(filePath, Buffer.from(data, 'base64'));
+    try {
+      await fs.writeFile(filePath, Buffer.from(data, 'base64'));
+    } catch (err) {
+      throw new Error(`Invalid base64 data for format "${format}": ${err.message}`);
+    }
     const stat = await fs.stat(filePath);
     onLog('info', `File written: ${filePath} (${stat.size} bytes, format=${format})`);
     return { filePath, format, fileName: baseName + ext, size: stat.size };
@@ -520,8 +531,14 @@ function buildNodeInput(node, edges, outputs) {
         input[targetField] = getNestedValue(sourceOutput, sourceField);
       }
     } else {
-      // No mapping: merge the whole output
-      Object.assign(input, typeof sourceOutput === 'object' ? sourceOutput : { value: sourceOutput });
+      // No mapping: merge the whole output, keyed by source node id to prevent overwrite
+      if (typeof sourceOutput === 'object' && sourceOutput !== null) {
+        input[edge.source] = sourceOutput;
+        // Also shallow-merge for backward compatibility
+        Object.assign(input, sourceOutput);
+      } else {
+        input.value = sourceOutput;
+      }
     }
   }
 
@@ -614,14 +631,25 @@ async function executeLLMSkill(node, inputData, skillConfig, adapters, onLog, ti
 
 function spawnSubprocess(entryPath, entryType, inputJson, timeout) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`Subprocess timed out after ${timeout}ms`));
-    }, timeout);
-
     let cmd, args;
     if (entryType === 'python') {
-      cmd = process.platform === 'win32' ? 'python' : 'python3';
+      if (process.platform === 'win32') {
+        const candidates = ['python3', 'python', 'py'];
+        cmd = null;
+        for (const c of candidates) {
+          try {
+            require('child_process').execSync(`"${c}" --version`, { stdio: 'ignore', timeout: 3000 });
+            cmd = c;
+            break;
+          } catch {}
+        }
+        if (!cmd) {
+          reject(new Error(`Python not found (tried: ${candidates.join(', ')})`));
+          return;
+        }
+      } else {
+        cmd = 'python3';
+      }
       args = [entryPath];
     } else if (entryType === 'node') {
       cmd = 'node';
@@ -629,7 +657,7 @@ function spawnSubprocess(entryPath, entryType, inputJson, timeout) {
     } else if (entryType === 'shell') {
       if (process.platform === 'win32') {
         cmd = 'cmd.exe';
-        args = ['/c', entryPath];
+        args = ['/d', '/c', entryPath.includes(' ') ? `"${entryPath}"` : entryPath];
       } else {
         cmd = '/bin/sh';
         args = [entryPath];
@@ -643,6 +671,11 @@ function spawnSubprocess(entryPath, entryType, inputJson, timeout) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, INPUT: inputJson, PYTHONIOENCODING: 'utf-8' },
     });
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Subprocess timed out after ${timeout}ms`));
+    }, timeout);
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
@@ -677,4 +710,4 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export default { executeWorkflow };
+export default { executeWorkflow, topologicalSort, buildNodeInput };

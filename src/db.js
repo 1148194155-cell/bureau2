@@ -22,6 +22,10 @@ export function initDatabase() {
   db.pragma('busy_timeout = 5000');  // wait up to 5s for other connections to release locks
 
   db.exec(`
+    -- Performance indexes
+    CREATE INDEX IF NOT EXISTS idx_knowledge_chunks_base ON knowledge_chunks(knowledge_base_id);
+    CREATE INDEX IF NOT EXISTS idx_execution_logs_exec ON execution_logs(execution_id);
+
     -- Users table (multi-user support)
     CREATE TABLE IF NOT EXISTS users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,

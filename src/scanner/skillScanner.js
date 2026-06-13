@@ -1,13 +1,14 @@
 ﻿import fs from 'fs-extra';
 import path from 'node:path';
 import os from 'node:os';
+import yaml from 'js-yaml';
 import { DEFAULT_MODEL_PATH } from '../models/builtinAdapter.js';
 import { execSync } from 'node:child_process';
 
 const SKILLS_DIR = path.join(os.homedir(), '.localcanvas', 'skills');
 const APIS_DIR = path.join(os.homedir(), '.localcanvas', 'apis');
 
-// 鈹€鈹€ Skill Scanning 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// --- Skill Scanning ---
 
 /**
  * Scan the ~/.localcanvas/skills/ directory and parse every skill.json.
@@ -50,7 +51,13 @@ export async function scanSkills() {
   return skills;
 }
 
-// 鈹€鈹€ Model Scanning 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// --- Model Scanning ---
+
+// ── Model scan cache (60s TTL to avoid blocking on ollama list) ──
+
+let _modelCache = null;
+let _modelCacheTime = 0;
+const MODEL_CACHE_TTL = 60000;
 
 /**
  * Auto-detect local model providers and merge with user-configured models.
@@ -58,6 +65,10 @@ export async function scanSkills() {
  * @param {number} userId - User ID
  */
 export async function scanModels(db, userId = 1) {
+  // Use cache within TTL
+  if (_modelCache && (Date.now() - _modelCacheTime) < MODEL_CACHE_TTL) {
+    return _modelCache;
+  }
   const models = [];
 
   // 0. Check for built-in model (shipped in models/builtin.gguf)
@@ -76,12 +87,13 @@ export async function scanModels(db, userId = 1) {
 
   // 1. Auto-detect Ollama
   try {
-    const output = execSync('ollama list', { encoding: 'utf8', timeout: 5000 });
+    const output = execSync('ollama list', { encoding: 'utf8', timeout: 2000 });
     const lines = output.trim().split('\n').slice(1); // skip header
     for (const line of lines) {
       const parts = line.trim().split(/\s+/);
       if (parts.length >= 1) {
         models.push({
+          id: `auto:ollama:${parts[0]}`,
           name: parts[0],
           adapter_type: 'ollama',
           config: { endpoint: 'http://localhost:11434', model: parts[0] },
@@ -91,19 +103,17 @@ export async function scanModels(db, userId = 1) {
       }
     }
   } catch {
-    // Ollama not available
+    console.warn('[Scanner] ollama not available (not installed or not running)');
   }
 
   // 2. Auto-detect llama.cpp server (default port 8080)
   try {
-    const res = await fetch('http://localhost:8080/completion', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt: 'test', n_predict: 1 }),
+    const res = await fetch('http://localhost:8080/health', {
       signal: AbortSignal.timeout(2000),
     });
     if (res.ok) {
       models.push({
+        id: 'auto:llamacpp',
         name: 'llama.cpp (local)',
         adapter_type: 'llamacpp',
         config: { endpoint: 'http://localhost:8080', model: 'default' },
@@ -113,6 +123,7 @@ export async function scanModels(db, userId = 1) {
     }
   } catch {
     // llama.cpp not available
+    console.warn('[Scanner] llama.cpp server not reachable');
   }
 
   // 3. Merge user-configured models from DB
@@ -131,10 +142,18 @@ export async function scanModels(db, userId = 1) {
     });
   }
 
+  _modelCache = models;
+  _modelCacheTime = Date.now();
   return models;
 }
 
-// 鈹€鈹€ API Scanning 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// --- API Scanning ---
+
+// ── API scan cache (60s TTL) ──
+
+let _apiCache = null;
+let _apiCacheTime = 0;
+const API_CACHE_TTL = 60000;
 
 /**
  * Scan ~/.localcanvas/apis/ for OpenAPI files and merge with user-configured APIs.
@@ -142,6 +161,9 @@ export async function scanModels(db, userId = 1) {
  * @param {number} userId
  */
 export async function scanApis(db, userId = 1) {
+  if (_apiCache && (Date.now() - _apiCacheTime) < API_CACHE_TTL) {
+    return _apiCache;
+  }
   const apis = [];
 
   // Scan filesystem for OpenAPI specs
@@ -153,7 +175,7 @@ export async function scanApis(db, userId = 1) {
     if (ext === '.json' || ext === '.yaml' || ext === '.yml') {
       try {
         const content = await fs.readFile(path.join(APIS_DIR, file), 'utf8');
-        const spec = JSON.parse(content);
+        const spec = ext === '.json' ? JSON.parse(content) : yaml.load(content);
         apis.push({
           name: spec.info?.title || file,
           sourceFile: file,
@@ -161,7 +183,7 @@ export async function scanApis(db, userId = 1) {
           source: 'file',
         });
       } catch {
-        // skip unparseable files
+        console.warn(`[Scanner] Failed to parse API file: ${file}`);
       }
     }
   }
@@ -183,10 +205,12 @@ export async function scanApis(db, userId = 1) {
     });
   }
 
+  _apiCache = apis;
+  _apiCacheTime = Date.now();
   return apis;
 }
 
-// 鈹€鈹€ Knowledge Base Scanning 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// --- Knowledge Base Scanning ---
 
 /**
  * Scan a folder, extract text (placeholder), chunk it, and store embeddings.
@@ -222,7 +246,7 @@ export async function indexKnowledgeBase(db, knowledgeBaseId, folderPath, embedF
         allMetadata.push({ filePath, chunkIndex: i });
       }
     } catch {
-      // skip unreadable files
+      console.warn(`[Scanner] Failed to read knowledge file: ${filePath}`);
     }
   }
 
@@ -265,7 +289,7 @@ export async function indexKnowledgeBase(db, knowledgeBaseId, folderPath, embedF
   return { totalChunks: allTexts.length };
 }
 
-// 鈹€鈹€ Helpers 鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€鈹€
+// --- Helpers ---
 
 /**
  * Recursively collect text files from a directory.

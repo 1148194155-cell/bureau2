@@ -22,7 +22,7 @@ export default function ResourcePanel() {
       const [s, m, a, k] = await Promise.all([fetchSkills(), fetchModels(), fetchApis(), fetchKnowledgeBases()]);
       setSkills(s); setModels(m); setApis(a); setKnowledgeBases(k);
     } catch { toast.error(t('resource.loadFailed')); }
-  }, []);
+  }, [t]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -68,8 +68,8 @@ export default function ResourcePanel() {
 
       <div className="flex-1 overflow-y-auto p-2 space-y-1">
         {items.map((item) => (
-          <div key={item.id} draggable onDragStart={(e) => onDragStart(e, item, activeTab)}
-            className="px-2.5 py-2 rounded-xl bg-surface-800/50 border border-surface-700/30 cursor-grab active:cursor-grabbing hover:border-surface-500/50 hover:bg-surface-750/50 transition-all group">
+          <div key={item.id} draggable={activeTab === 'skills' || activeTab === 'knowledgeBases'} onDragStart={(e) => onDragStart(e, item, activeTab)}
+            className={"px-2.5 py-2 rounded-xl bg-surface-800/50 border border-surface-700/30 transition-all group " + (activeTab === 'skills' || activeTab === 'knowledgeBases' ? "cursor-grab active:cursor-grabbing hover:border-surface-500/50 hover:bg-surface-750/50" : "cursor-default")}>
             <div className="flex items-center gap-1.5">
               <GripHorizontal size={10} className="text-surface-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
               <span className="text-xs font-medium text-surface-200 truncate flex-1">{item.name}</span>

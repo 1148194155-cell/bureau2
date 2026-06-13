@@ -3,7 +3,7 @@ import { Send, Sparkles, Trash2, Plus, User, Loader2, ChevronDown, Paperclip } f
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
-import { aiChat, getBuiltinStatus, saveWorkflow, listWorkflows, loadWorkflow, createModel, deleteModel, createApiKey, deleteApiKey, createKnowledgeBase, deleteKnowledgeBase, indexKnowledgeBase } from "../api/api";
+import { aiChat, getBuiltinStatus, saveWorkflow, listWorkflows, loadWorkflow, createModel, deleteModel, createApiKey, deleteApiKey, createKnowledgeBase, deleteKnowledgeBase, indexKnowledgeBase, runWorkflow, createExecutionSocket } from "../api/api";
 import { useI18n } from "../i18n";
 
 export default function AIChat() {
@@ -17,6 +17,7 @@ export default function AIChat() {
   const [builtinReady, setBuiltinReady] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const abortRef = useRef(null);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, loading]);
 
@@ -24,7 +25,7 @@ export default function AIChat() {
     getBuiltinStatus().then(info => {
       if (info?.available) {
         setBuiltinReady(true);
-        const builtin = models.find(m => m.id === 'builtin');
+        const builtin = useStore.getState().models.find(m => m.id === 'builtin');
         if (builtin) setSelectedModel('builtin');
       }
     }).catch(() => {});
@@ -45,24 +46,48 @@ export default function AIChat() {
 
   const handleSend = async () => {
     const msg = input.trim();
-    if (!msg) return;
+    if (!msg || loading) return;
+    // Cancel any in-flight request
+    if (abortRef.current) abortRef.current.abort();
+    const controller = new AbortController();
+    abortRef.current = controller;
     addChatMessage({ role: "user", content: msg });
     setInput("");
     setLoading(true);
     try {
       const history = chatMessages.map((m) => ({ role: m.role, content: m.content }));
-      const result = await aiChat({ message: msg, history, canvas_state: { nodes, edges }, model_id: selectedModel || undefined, lang: 'zh' });
+      const result = await aiChat({ message: msg, history, canvas_state: { nodes, edges }, model_id: selectedModel || undefined, lang: 'zh' }, controller.signal);
       addChatMessage({ role: "assistant", content: result.reply });
       if (result.actions) {
         for (const action of result.actions) {
           switch (action.type) {
             case "add_node": addNode(action.payload.nodeType, { ...action.payload.data, config: action.payload.data?.config || {} }, action.payload.position); addChatMessage({ role: "system", content: t('chat.nodeAdded') }); break;
-            case "connect": useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: "✅ 已连接" }); break;
-            case "connect_with_mapping": useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: `✅ 已连接，字段映射: ${JSON.stringify(action.payload.mapping)}` }); break;
-            case "connect_with_condition": useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: `✅ 已连接，条件: ${action.payload.condition}` }); break;
-            case "connect_workflow": useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: "✅ 工作流节点已连接" }); break;
+            case "connect": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: "✅ 已连接" }); break;
+            case "connect_with_mapping": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: `✅ 已连接，字段映射: ${JSON.stringify(action.payload.mapping)}` }); break;
+            case "connect_with_condition": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: `✅ 已连接，条件: ${action.payload.condition}` }); break;
+            case "connect_workflow": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: "✅ 工作流节点已连接" }); break;
             case "update_config": updateNodeData(action.payload.nodeId, { config: action.payload.config }); addChatMessage({ role: "system", content: t('chat.configUpdated') }); break;
-            case "run_workflow": toast.success(t('chat.aiTriggered')); break;
+            case "run_workflow":
+              (async () => {
+                const s = useStore.getState();
+                if (s.nodes.length === 0) { addChatMessage({ role: "system", content: "⚠️ 画布为空，无法执行" }); return; }
+                try {
+                  const { execution_id } = await runWorkflow({ nodes: s.nodes, edges: s.edges, options: { outputDir: s.outputDir || undefined } });
+                  s.setExecutionId(execution_id);
+                  s.setRunLogOpen(true);
+                  const ws = createExecutionSocket(execution_id);
+                  ws.onmessage = (e) => {
+                    const msg = JSON.parse(e.data);
+                    if (msg.type === "log") s.addExecutionLog(msg.data);
+                    else if (msg.type === "complete") { s.setExecutionStatus("completed"); s.addExecutionLog({ level: "info", message: "执行完成" }); }
+                    else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); }
+                  };
+                  addChatMessage({ role: "system", content: t('chat.aiTriggered') });
+                } catch (err) {
+                  addChatMessage({ role: "system", content: `❌ 执行失败: ${err.message}` });
+                }
+              })();
+              break;
             case "clear_canvas": clearCanvas(); addChatMessage({ role: "system", content: t('chat.cleared') }); break;
             case "save_workflow":
               saveWorkflow(action.payload.name, nodes, edges, null)
@@ -139,13 +164,17 @@ export default function AIChat() {
                 .catch((err) => addChatMessage({ role: "system", content: `❌ 索引失败: ${err.message}` }));
               break;
             case "navigate_to_settings":
+              useStore.getState().setNavigateToPage("settings");
               addChatMessage({ role: "system", content: "正在切换到设置页面" });
               break;
         }
       }
     }
     } catch (err) {
-      addChatMessage({ role: "assistant", content: t('chat.requestFailed') + (err.response?.data?.error || err.message) });
+      if (err.name === 'CanceledError' || err.code === 'ERR_CANCELED') return; // silently ignore aborted requests
+      const errMsg = err.response?.data?.error || err.message || 'Unknown error';
+      addChatMessage({ role: "assistant", content: t('chat.requestFailed') + errMsg });
+      toast.error(errMsg);
     } finally { setLoading(false); }
   };
 
