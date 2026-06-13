@@ -4,12 +4,12 @@
 
 Local Canvas 是一个搭 AI 工作流的本地工具。你可以在白板上拖拽组合各种 AI 能力，做成一个自动化流程，一键运行。
 
-它内置了一个轻量 AI 模型（Qwen2.5-3B，2.1GB GGUF），开箱即用——不需要配 Key、不需要联网、不需要装 Ollama。
+支持本地运行 Qwen2.5-3B（需自行下载 ~2.1GB GGUF 放至 models/ 目录），无需联网、无需 Key、无需装 Ollama。
 
 ## 功能
 
 - **可视化工作流** — 拖拽节点、连线，搭 AI 工作流
-- **多模型支持** — OpenAI / Ollama / Anthropic / llama.cpp / 内置模型
+- **多模型支持** — OpenAI / Ollama / Anthropic / llama.cpp / 本地模型（需下载）
 - **知识库 RAG** — 把本地文件夹索引到向量库，让 AI 检索你的文档
 - **API 集成** — 添加自定义 API 端点拼接工作流
 - **本地 AI 对话** — 右侧面板直接用大白话指挥 AI 操作画布
@@ -20,12 +20,12 @@ Local Canvas 是一个搭 AI 工作流的本地工具。你可以在白板上拖
 | 维度 | Local Canvas | 竞品 (Coze/Dify) |
 |------|:-----------:|:---------------:|
 | 数据存储 | 本地 SQLite，不外传 | 云端，数据在对方服务器 |
-| 模型 | 内置 Qwen2.5-3B + OpenAI/Ollama/Anthropic/llama.cpp | 仅平台内置模型 |
+| 模型 | 支持 Qwen2.5-3B（需下载）+ OpenAI/Ollama/Anthropic/llama.cpp | 仅平台内置模型 |
 | 工作流 | 无限节点、自由连线、字段映射 | 有节点数和复杂度限制 |
 | 知识库 | 本地文件索引 + RAG，完全私密 | 需上传文件到云端 |
-| 离线 | 100% 本地运行（内置模型无需联网） | 必须联网 |
+| 离线 | 100% 本地运行（配本地模型后无需联网） | 必须联网 |
 | 扩展 | 写 Python/Node/Shell Skill 自由扩展 | 平台封闭，仅内置工具 |
-| 本地模型 | Qwen2.5-3B 内置，2.1GB GGUF | 通常不提供本地模型 |
+| 本地模型 | 支持 Qwen2.5-3B（需自行下载 2.1GB GGUF） | 通常不提供本地模型 |
 | Skill 生态 | 开放 Skill 系统（Python/Node/Shell） | 封闭的工具生态 |
 
 ## 快速开始
@@ -46,9 +46,9 @@ Local Canvas 是一个搭 AI 工作流的本地工具。你可以在白板上拖
 
 ### 5 分钟上手
 
-1. 打开首页，右侧 AI 面板显示「内置模型 (本地) 🟢 在线」
+1. 打开首页，先在设置里配一个模型（或放 Qwen2.5-3B GGUF 到 models/ 目录）
 2. 从左边把「模型」节点拖到白板上
-3. 点一下节点，在配置面板绑定内置模型，参数填：`{ "prompt": "把以下内容翻译成英文: {{input}}" }`
+3. 点一下节点，在配置面板绑定模型，参数填：`{ "prompt": "把以下内容翻译成英文: {{input}}" }`
 4. 点工具栏的「运行」
 5. 在弹出的输入框里输入中文，看日志结果
 
@@ -73,7 +73,7 @@ localcanvas/
 │       ├── pages/         # CanvasPage / SettingsPage
 │       └── store/         # Zustand 状态管理
 ├── electron/              # Electron 桌面壳
-├── models/                # 内置 AI 模型文件（builtin.gguf）
+├── models/                # （可选）本地 AI 模型文件（builtin.gguf）
 └── public/                # 构建产物（前端静态文件）
 ```
 
