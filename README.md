@@ -1,175 +1,107 @@
-# Local Canvas 閳?閸欘垵顫嬮崠?AI 瀹搞儰缍斿ù浣烘暰鐢?
+﻿# Local Canvas — 可视化 AI 工作流构建工具
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
 
-![閹搭亜娴榏(test_screenshots/step5_workflow.png)
+Local Canvas 是一个搭 AI 工作流的本地工具。你可以在白板上拖拽组合各种 AI 能力，做成一个自动化流程，一键运行。
 
-閹锋牗瀚块懞鍌滃仯閸楀啿褰查弸鍕紦 AI 瀹搞儰缍斿ù浣碘偓鍌氱暚閸忋劍婀伴崷鎷岀箥鐞涘矉绱濋弨顖涘瘮婢舵碍膩閸ㄥ鍨忛幑顫偓浣虹叀鐠囧棗绨?RAG閵嗕竸PI 闂嗗棙鍨氶崪灞藉敶缂?AI 鐎电鐦介妴?
+它内置了一个轻量 AI 模型（Qwen2.5-3B，2.1GB GGUF），开箱即用——不需要配 Key、不需要联网、不需要装 Ollama。
 
-## 閸旂喕鍏?
+## 功能
 
-- **閹锋牗瀚垮蹇曟暰鐢?* 閳?閸欘垵顫嬮崠鏍ㄦ儗瀵?AI 瀹搞儰缍斿ù?
-- **婢舵碍膩閸ㄥ鏁幐?* 閳?OpenAI / Ollama / Anthropic / llama.cpp / 閸愬懐鐤嗛張顒€婀村Ο鈥崇€?
-- **閻儴鐦戞惔?RAG** 閳?缁便垹绱╅張顒€婀撮弬鍥ㄣ€傞敍灞筋杻瀵?AI 娑撳﹣绗呴弬?
-- **API 闂嗗棙鍨?* 閳?閸︺劌浼愭担婊勭ウ娑擃叀鐨熼悽銊ヮ樆闁劍婀囬崝?
-- **閸愬懐鐤?AI 鐎电鐦?* 閳?閼奉亞鍔х拠顓♀枅閹貉冨煑閻㈣绔烽幙宥勭稊
-- **Electron 濡楀矂娼版惔鏃傛暏** 閳?Windows / macOS / Linux 鐠恒劌閽╅崣?
+- **可视化工作流** — 拖拽节点、连线，搭 AI 工作流
+- **多模型支持** — OpenAI / Ollama / Anthropic / llama.cpp / 内置模型
+- **知识库 RAG** — 把本地文件夹索引到向量库，让 AI 检索你的文档
+- **API 集成** — 添加自定义 API 端点拼接工作流
+- **本地 AI 对话** — 右侧面板直接用大白话指挥 AI 操作画布
+- **Electron 桌面应用** — Windows / macOS / Linux 全平台
 
+## 对比
 
-## 鐎佃鐖ｉ張顒€婀撮幍锝呯摍
-
-| 缂佹潙瀹?| Local Canvas | 閺堫剙婀撮幍锝呯摍 (Coze) |
+| 维度 | Local Canvas | 竞品 (Coze/Dify) |
 |------|:-----------:|:---------------:|
-| 鏉╂劘顢戦弬鐟扮础 | 鐎瑰苯鍙忛張顒€婀撮敍灞炬￥闂団偓閼辨梻缍?| 娓氭繆绂嗘禍鎴狀伂閺堝秴濮?|
-| 濡€崇€烽弨顖涘瘮 | 閸愬懐鐤?+ OpenAI/Ollama/Anthropic/llama.cpp | 娴犲懘妾洪幍锝呯摍楠炲啿褰村Ο鈥崇€?|
-| 瀹搞儰缍斿ù?| 閸欘垵顫嬮崠鏍ㄥ珛閹锋枻绱濋懛顏嗘暠鏉╃偟鍤?| 妫板嫯顔曞Ο鈩冩緲閿涘瞼浼掑ú璇插閸欐妾?|
-| 閻儴鐦戞惔?| 閺堫剙婀撮弬鍥ㄣ€?RAG閿涘矂娈ｇ粔浣哥暔閸?| 闂団偓娑撳﹣绱堕崚棰佺隘缁?|
-| 閺佺増宓侀梾鎰潌 | 100% 閺堫剙婀撮敍灞炬殶閹诡喕绗夐崙鐑樻拱閺?| 閺佺増宓佺€涙ê鍋嶉崷銊﹀⒏鐎涙劖婀囬崝鈥虫珤 |
-| 閹存劖婀?| 閸忓秷鍨傞敍灞炬￥ API 鐠嬪啰鏁ょ拹鍦暏 | 閺堝鐨熼悽銊╁櫤闂勬劕鍩楅崪灞炬暪鐠?|
-| 閸愬懐鐤嗗Ο鈥崇€?| Qwen2.5-3B 瀵偓缁犲崬宓嗛悽?| 閺冪姴鍞寸純顕嗙礉闂団偓閼辨梻缍夌拫鍐暏 |
-| 閹碘晛鐫嶉幀?| 閼奉亜鐣炬稊?Skill 閼存碍婀?(Python/Node/Shell) | 娴犲懎閽╅崣鏉垮敶閹绘帊娆?|
-| 闁倻鏁ゆ禍铏瑰參 | 闁插秷顫嬮梾鎰潌閵嗕胶顬囩痪鍨簚閺咁垬鈧礁绱戦崣鎴ｂ偓?| 韫囶偊鈧喍绗傞幍瀣ㄢ偓浣风隘缁旑垰宕楁担?|
+| 数据存储 | 本地 SQLite，不外传 | 云端，数据在对方服务器 |
+| 模型 | 内置 Qwen2.5-3B + OpenAI/Ollama/Anthropic/llama.cpp | 仅平台内置模型 |
+| 工作流 | 无限节点、自由连线、字段映射 | 有节点数和复杂度限制 |
+| 知识库 | 本地文件索引 + RAG，完全私密 | 需上传文件到云端 |
+| 离线 | 100% 本地运行（内置模型无需联网） | 必须联网 |
+| 扩展 | 写 Python/Node/Shell Skill 自由扩展 | 平台封闭，仅内置工具 |
+| 本地模型 | Qwen2.5-3B 内置，2.1GB GGUF | 通常不提供本地模型 |
+| Skill 生态 | 开放 Skill 系统（Python/Node/Shell） | 封闭的工具生态 |
 
-## 鐎瑰顥婇弬鐟扮础
+## 快速开始
 
-### 閺傜懓绱℃稉鈧敍姘稊娑?Codex 閹绘帊娆㈢€瑰顥?
+### 前提
 
-閸?Codex 娓氀嗙珶閺?閳?閹绘帊娆㈢敮鍌氭簚 閳?閹兼粎鍌?"Local Canvas" 閳?閻愮懓鍤€瑰顥婇妴?
+- **Node.js >= 18**（[nodejs.org](https://nodejs.org) 下载 LTS 版本）
 
-閹存牞鈧懏澧滈崝銊ュ帬闂呭棴绱?
+### 安装与启动
+
+**Windows：** 双击 `start.bat`
+
+**Mac/Linux：** `chmod +x start.sh && bash start.sh`
+
+第一次运行会下载依赖包，约 2-3 分钟。之后启动很快。
+
+等到提示后，浏览器会自动打开 `http://localhost:5173`
+
+### 5 分钟上手
+
+1. 打开首页，右侧 AI 面板显示「内置模型 (本地) 🟢 在线」
+2. 从左边把「模型」节点拖到白板上
+3. 点一下节点，在配置面板绑定内置模型，参数填：`{ "prompt": "把以下内容翻译成英文: {{input}}" }`
+4. 点工具栏的「运行」
+5. 在弹出的输入框里输入中文，看日志结果
+
+或者直接用 AI 对话：
+
+在右侧对话框输入：*"帮我搭一个翻译工作流，把用户输入的中文翻译成英文"* — AI 会自动完成以上全部步骤。
+
+## 项目结构
+
+```
+localcanvas/
+├── src/                   # 后端（Express + SQLite + WebSocket）
+│   ├── engine/            # 工作流执行引擎（DAG 拓扑排序 + 并行执行）
+│   ├── models/            # AI 模型适配器（OpenAI/Ollama/Anthropic/llama.cpp）
+│   ├── ai/                # AI 对话 + 工具调用（ReAct 模式）
+│   ├── scanner/           # 资源扫描器（Skills/Models/APIs/知识库）
+│   ├── review/            # 工作流审查器（结构/配置/安全校验）
+│   └── routes/            # REST API 路由
+├── renderer/              # 前端（React + Vite + Zustand + ReactFlow）
+│   └── src/
+│       ├── components/    # 画布/工具栏/资源面板/AI对话/自定义节点
+│       ├── pages/         # CanvasPage / SettingsPage
+│       └── store/         # Zustand 状态管理
+├── electron/              # Electron 桌面壳
+├── models/                # 内置 AI 模型文件（builtin.gguf）
+└── public/                # 构建产物（前端静态文件）
+```
+
+## 可用 Skill 目录
+
+内置的 `~/.localcanvas/skills/` 包含 30+ 个开箱即用的 Skill：文本摘要、翻译、代码生成、图片生成、数据可视化、网页抓取、邮件发送、文档转换等。
+
+同时自动发现 `~/.codex/skills/` 和 `~/.agents/skills/` 下的 SKILL.md 技能。
+
+## 开发
 
 ```bash
-git clone https://github.com/1148194155-cell/bureau2.git
+# 安装所有依赖（后端 + 前端）
+npm run setup
+
+# 开发模式（后端 3001 + 前端 5173 热更新）
+npm run dev:all
+
+# 仅后端
+npm run dev
+
+# 仅前端
+npm run dev:frontend
+
+# 生产构建
+npm run build
 ```
-
-### 閺傜懓绱℃禍宀嬬窗娴ｆ粈璐?OpenAI 閸忕厧顔?Skill 娴ｈ法鏁?
-
-鐏?`local-canvas/` 閻╊喖缍嶉弨鎯у弳娴犵粯鍓?OpenAI agent 閻?skills 鐠侯垰绶炴稉瀣祮閸欘垵鍤滈崝銊ュ絺閻滆埇鈧?
-
-### 閺傜懓绱℃稉澶涚窗閻欘剛鐝涙潻鎰攽
-
-```bash
-node -v  # 闂団偓鐟?Node.js >= 18
-cd local-canvas/scripts
-npm install
-cd renderer
-npm install
-cd ..
-node src/index.js    # 閸氬海顏?http://localhost:3001
-npx vite --cwd renderer  # 閸撳秶顏?http://localhost:5173
-```
-
-## 韫囶偊鈧喎绱戞慨?
-
-```powershell
-.\local-canvas\scripts\start.ps1           # 閸氼垰濮╅崜宥呮倵缁?
-.\local-canvas\scripts\start.ps1 -NoBrowser # 娑撳秷鍤滈崝銊﹀ⅵ瀵偓濞村繗顫嶉崳?
-.\local-canvas\scripts\stop.ps1            # 閸嬫粍顒涢張宥呭
-```
-
-閸氼垰濮╅崥搴ゎ問闂傤噯绱?
-- 閸撳秶顏悾宀勬桨閿涙ttp://localhost:5173
-- 閸氬海顏?API閿涙ttp://localhost:3001/api
-- 閸嬨儱鎮嶅Λ鈧弻銉窗http://localhost:3001/api/health
-
-## 妞ゅ湱娲扮紒鎾寸€?
-
-```
-local-canvas/
-閳规壕鏀㈤埞鈧?skills/SKILL.md          # AI skill 閹稿洣鎶?
-閳规壕鏀㈤埞鈧?agents/openai.yaml       # OpenAI agent 閸忓啯鏆熼幑?
-閳规壕鏀㈤埞鈧?.codex-plugin/plugin.json # Codex 閹绘帊娆㈠〒鍛礋
-閳规壕鏀㈤埞鈧?scripts/
-閳?  閳规壕鏀㈤埞鈧?src/                 # 閸氬海顏?(Express + SQLite + WebSocket)
-閳?  閳规壕鏀㈤埞鈧?renderer/            # 閸撳秶顏?(React + Vite + React Flow)
-閳?  閳规壕鏀㈤埞鈧?start.ps1            # 娑撯偓闁款喖鎯庨崝?(Windows)
-閳?  閳规柡鏀㈤埞鈧?stop.ps1             # 閸嬫粍顒涢張宥呭
-閳规柡鏀㈤埞鈧?assets/                  # 鐠у嫭绨弬鍥︽
-```
-
-## 鐠佺褰茬拠?
-
-[MIT](LICENSE)
-
----
-
-# Local Canvas 閳?Visual AI Workflow Canvas
-
-Drag and drop nodes to build AI workflows. Fully local execution, multi-model support, knowledge base RAG, API integration, and built-in AI assistant.
-
-## Features
-
-- **Drag-and-drop Canvas** 閳?Visually build AI workflows
-- **Multi-model Support** 閳?OpenAI / Ollama / Anthropic / llama.cpp / built閳ユ吔n local model
-- **Knowledge Base RAG** 閳?Index local documents to enhance AI context
-- **API Integration** 閳?Call external services within workflows
-- **Built-in AI Chat** 閳?Natural language control over canvas operations
-- **Electron Desktop App** 閳?Cross閳ユ唲latform for Windows / macOS / Linux
-
-
-## Setup Guide
-
-### 1. Add OpenAI Model
-Open browser → `Settings` → `Model Config` → `Add`:
-
-| Field | Value |
-|-------|-------|
-| Name | Anything, e.g. `My GPT` |
-| Adapter | `OpenAI` |
-| API Endpoint | `https://api.openai.com/v1` |
-| Model ID | `gpt-4o` or `gpt-3.5-turbo` |
-| Key | Your `sk-` API Key |
-
-### 2. Add Ollama Local Model
-Make sure [Ollama](https://ollama.com) is installed and model pulled:
-
-```bash
-ollama pull qwen2.5:7b
-```
-
-Then add in Settings:
-
-| Field | Value |
-|-------|-------|
-| Name | `Local Ollama` |
-| Adapter | `Ollama` |
-| API Endpoint | `http://localhost:11434/v1` |
-| Model ID | `qwen2.5:7b` |
-
-### 3. Built-in Local Model (Optional)
-Requires downloading Qwen2.5-3B (~2.1GB), contact **WeChat: longggyt**.
-
-### 4. Add API Key
-`Settings` → `API Keys` → `Add` to manage keys centrally.
-
-## Quick Start
-
-Double-click `start.bat` (or `閸氼垰濮?bat`) 閳?dependency installation and service startup handled automatically.
-
-Or via PowerShell:
-
-```powershell
-.\local-canvas\scripts\start.ps1
-```
-
-Then visit:
-- Frontend: http://localhost:5173
-- Backend API: http://localhost:3001/api
-
-## vs Local Coze
-
-| Dimension | Local Canvas | Coze (Local) |
-|-----------|:-----------:|:------------:|
-| Runtime | Fully local, no internet | Cloud-dependent |
-| Models | Built-in + OpenAI/Ollama/Anthropic/llama.cpp | Coze platform only |
-| Workflow | Drag-and-drop, free connection | Preset templates, limited |
-| Knowledge Base | Local RAG, privacy safe | Upload to cloud |
-| Data Privacy | 100% local | Stored on Coze servers |
-| Cost | Free, no API fees | Usage limits & charges |
-| Built-in Model | Qwen2.5-3B ready | None, needs internet |
-| Extensibility | Custom Skill scripts (Python/Node/Shell) | Platform plugins only |
-| Target Users | Privacy-focused, offline, developers | Quick start, cloud collab |
 
 ## License
 
-[MIT](LICENSE)
+MIT
