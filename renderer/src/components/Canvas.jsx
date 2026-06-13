@@ -58,7 +58,7 @@ export default function Canvas() {
         onNodeDoubleClick={onNodeDoubleClick} onPaneClick={() => setSelectedNode(null, null)}
         nodeTypes={nodeTypes} defaultEdgeOptions={defaultEdgeOptions}
         fitView deleteKeyCode={["Backspace", "Delete"]}
-        connectionMode="loose"
+        connectionMode="loose" /* headless (Playwright) may not fire handle-drag events; use store.onConnect() for tests */
         connectionLineStyle={{ stroke: '#059669', strokeWidth: 2 }}
         multiSelectionKeyCode="Shift" className="!bg-transparent">
         <Controls className="!bg-surface-850 !border-surface-700/40 !rounded-xl !shadow-lg" />

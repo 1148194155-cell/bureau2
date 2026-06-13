@@ -52,7 +52,7 @@ const en = {
   },
   settings: {
     title: 'Settings',
-    tabs: { models: 'Models', apikeys: 'API Keys', knowledge: 'Knowledge' },
+    tabs: { models: 'Model Config', apikeys: 'API Keys', knowledge: 'Knowledge Bases' },
     add: 'Add', cancel: 'Cancel', save: 'Save',
     addModel: 'Add Model', addKey: 'Add API Key', addKB: 'Add Knowledge Base',
     name: 'Name', adapter: 'Adapter', endpoint: 'API Endpoint',

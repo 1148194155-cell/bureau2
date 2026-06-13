@@ -729,7 +729,7 @@ router.post('/ai/chat', asyncHandler(async (req, res) => {
       });
     }
     model = { id: 'builtin', name: '内置模型 (本地)', adapter_type: 'builtin', config: {} };
-    timeoutMs = 120000;  // builtin 2GB GGUF needs longer first-load time
+    timeoutMs = 180000;  // builtin: 2GB GGUF first-load 30-40s + inference 10-30s, 3min total
   } else {
     model = db.prepare('SELECT * FROM models WHERE id = ? AND user_id = ?').get(modelId, userId);
     if (!model) {

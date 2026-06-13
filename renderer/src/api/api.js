@@ -111,7 +111,7 @@ export async function getExecutionStatus(executionId) {
 export async function aiChat({ message, history, canvas_state, model_id, lang }, signal) {
   const { data } = await api.post("/ai/chat",
     { message, history, canvas_state, model_id, lang },
-    { timeout: 120000, signal }   // builtin 模型首响应 26-40s
+    { timeout: 180000, signal }   // builtin: first-load 30-40s + inference
   );
   return data.data;
 }

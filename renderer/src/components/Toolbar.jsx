@@ -16,10 +16,12 @@ export default function Toolbar() {
     if (s.nodes.length === 0) return toast.error(t('toolbar.emptyCanvas'));
     if (wsRef.current) { wsRef.current.close(); wsRef.current = null; }
     s.setRunLogOpen(true);
-    toast(t('toolbar.running'), { icon: '🚀', duration: 2000 });
+    s.addExecutionLog({ level: "info", message: "⏳ 正在连接后端..." });
+    const toastId = toast.loading(t('toolbar.running'));
     try {
       const { execution_id } = await runWorkflow({ nodes: s.nodes, edges: s.edges, options: { outputDir: s.outputDir || undefined } });
       s.setExecutionId(execution_id);
+      toast.dismiss(toastId);
       toast.success(t('toolbar.started'));
       const ws = createExecutionSocket(execution_id);
       wsRef.current = ws;
@@ -33,6 +35,7 @@ export default function Toolbar() {
       ws.onclose = () => { wsRef.current = null; };
     } catch (err) {
       s.setExecutionStatus("failed");
+      toast.dismiss(toastId);
       s.addExecutionLog({ level: "error", message: err?.response?.data?.error || err.message || "Failed to start" });
       toast.error(t('toolbar.runFailed'));
     }

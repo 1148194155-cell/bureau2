@@ -52,7 +52,7 @@ const zh = {
   },
   settings: {
     title: '设置',
-    tabs: { models: '模型管理', apikeys: 'API Key', knowledge: '知识库' },
+    tabs: { models: '模型配置', apikeys: 'API Key', knowledge: '知识库管理' },
     add: '添加', cancel: '取消', save: '保存',
     addModel: '添加模型', addKey: '添加 API Key', addKB: '添加知识库',
     name: '名称', adapter: '适配器', endpoint: 'API 端点',
