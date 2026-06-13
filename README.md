@@ -1,114 +1,150 @@
-# Local Canvas 鈥?鍙鍖?AI 宸ヤ綔娴佺敾甯?
+# Local Canvas 閳?閸欘垵顫嬮崠?AI 瀹搞儰缍斿ù浣烘暰鐢?
 
 [![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
 
-![鎴浘](test_screenshots/step5_workflow.png)
+![閹搭亜娴榏(test_screenshots/step5_workflow.png)
 
-鎷栨嫿鑺傜偣鍗冲彲鏋勫缓 AI 宸ヤ綔娴併€傚畬鍏ㄦ湰鍦拌繍琛岋紝鏀寔澶氭ā鍨嬪垏鎹€佺煡璇嗗簱 RAG銆丄PI 闆嗘垚鍜屽唴缃?AI 瀵硅瘽銆?
+閹锋牗瀚块懞鍌滃仯閸楀啿褰查弸鍕紦 AI 瀹搞儰缍斿ù浣碘偓鍌氱暚閸忋劍婀伴崷鎷岀箥鐞涘矉绱濋弨顖涘瘮婢舵碍膩閸ㄥ鍨忛幑顫偓浣虹叀鐠囧棗绨?RAG閵嗕竸PI 闂嗗棙鍨氶崪灞藉敶缂?AI 鐎电鐦介妴?
 
-## 鍔熻兘
+## 閸旂喕鍏?
 
-- **鎷栨嫿寮忕敾甯?* 鈥?鍙鍖栨惌寤?AI 宸ヤ綔娴?
-- **澶氭ā鍨嬫敮鎸?* 鈥?OpenAI / Ollama / Anthropic / llama.cpp / 鍐呯疆鏈湴妯″瀷
-- **鐭ヨ瘑搴?RAG** 鈥?绱㈠紩鏈湴鏂囨。锛屽寮?AI 涓婁笅鏂?
-- **API 闆嗘垚** 鈥?鍦ㄥ伐浣滄祦涓皟鐢ㄥ閮ㄦ湇鍔?
-- **鍐呯疆 AI 瀵硅瘽** 鈥?鑷劧璇█鎺у埗鐢诲竷鎿嶄綔
-- **Electron 妗岄潰搴旂敤** 鈥?Windows / macOS / Linux 璺ㄥ钩鍙?
+- **閹锋牗瀚垮蹇曟暰鐢?* 閳?閸欘垵顫嬮崠鏍ㄦ儗瀵?AI 瀹搞儰缍斿ù?
+- **婢舵碍膩閸ㄥ鏁幐?* 閳?OpenAI / Ollama / Anthropic / llama.cpp / 閸愬懐鐤嗛張顒€婀村Ο鈥崇€?
+- **閻儴鐦戞惔?RAG** 閳?缁便垹绱╅張顒€婀撮弬鍥ㄣ€傞敍灞筋杻瀵?AI 娑撳﹣绗呴弬?
+- **API 闂嗗棙鍨?* 閳?閸︺劌浼愭担婊勭ウ娑擃叀鐨熼悽銊ヮ樆闁劍婀囬崝?
+- **閸愬懐鐤?AI 鐎电鐦?* 閳?閼奉亞鍔х拠顓♀枅閹貉冨煑閻㈣绔烽幙宥勭稊
+- **Electron 濡楀矂娼版惔鏃傛暏** 閳?Windows / macOS / Linux 鐠恒劌閽╅崣?
 
 
-## 瀵规爣鏈湴鎵ｅ瓙
+## 鐎佃鐖ｉ張顒€婀撮幍锝呯摍
 
-| 缁村害 | Local Canvas | 鏈湴鎵ｅ瓙 (Coze) |
+| 缂佹潙瀹?| Local Canvas | 閺堫剙婀撮幍锝呯摍 (Coze) |
 |------|:-----------:|:---------------:|
-| 杩愯鏂瑰紡 | 瀹屽叏鏈湴锛屾棤闇€鑱旂綉 | 渚濊禆浜戠鏈嶅姟 |
-| 妯″瀷鏀寔 | 鍐呯疆 + OpenAI/Ollama/Anthropic/llama.cpp | 浠呴檺鎵ｅ瓙骞冲彴妯″瀷 |
-| 宸ヤ綔娴?| 鍙鍖栨嫋鎷斤紝鑷敱杩炵嚎 | 棰勮妯℃澘锛岀伒娲诲害鍙楅檺 |
-| 鐭ヨ瘑搴?| 鏈湴鏂囨。 RAG锛岄殣绉佸畨鍏?| 闇€涓婁紶鍒颁簯绔?|
-| 鏁版嵁闅愮 | 100% 鏈湴锛屾暟鎹笉鍑烘湰鏈?| 鏁版嵁瀛樺偍鍦ㄦ墸瀛愭湇鍔″櫒 |
-| 鎴愭湰 | 鍏嶈垂锛屾棤 API 璋冪敤璐圭敤 | 鏈夎皟鐢ㄩ噺闄愬埗鍜屾敹璐?|
-| 鍐呯疆妯″瀷 | Qwen2.5-3B 寮€绠卞嵆鐢?| 鏃犲唴缃紝闇€鑱旂綉璋冪敤 |
-| 鎵╁睍鎬?| 鑷畾涔?Skill 鑴氭湰 (Python/Node/Shell) | 浠呭钩鍙板唴鎻掍欢 |
-| 閫傜敤浜虹兢 | 閲嶈闅愮銆佺绾垮満鏅€佸紑鍙戣€?| 蹇€熶笂鎵嬨€佷簯绔崗浣?|
+| 鏉╂劘顢戦弬鐟扮础 | 鐎瑰苯鍙忛張顒€婀撮敍灞炬￥闂団偓閼辨梻缍?| 娓氭繆绂嗘禍鎴狀伂閺堝秴濮?|
+| 濡€崇€烽弨顖涘瘮 | 閸愬懐鐤?+ OpenAI/Ollama/Anthropic/llama.cpp | 娴犲懘妾洪幍锝呯摍楠炲啿褰村Ο鈥崇€?|
+| 瀹搞儰缍斿ù?| 閸欘垵顫嬮崠鏍ㄥ珛閹锋枻绱濋懛顏嗘暠鏉╃偟鍤?| 妫板嫯顔曞Ο鈩冩緲閿涘瞼浼掑ú璇插閸欐妾?|
+| 閻儴鐦戞惔?| 閺堫剙婀撮弬鍥ㄣ€?RAG閿涘矂娈ｇ粔浣哥暔閸?| 闂団偓娑撳﹣绱堕崚棰佺隘缁?|
+| 閺佺増宓侀梾鎰潌 | 100% 閺堫剙婀撮敍灞炬殶閹诡喕绗夐崙鐑樻拱閺?| 閺佺増宓佺€涙ê鍋嶉崷銊﹀⒏鐎涙劖婀囬崝鈥虫珤 |
+| 閹存劖婀?| 閸忓秷鍨傞敍灞炬￥ API 鐠嬪啰鏁ょ拹鍦暏 | 閺堝鐨熼悽銊╁櫤闂勬劕鍩楅崪灞炬暪鐠?|
+| 閸愬懐鐤嗗Ο鈥崇€?| Qwen2.5-3B 瀵偓缁犲崬宓嗛悽?| 閺冪姴鍞寸純顕嗙礉闂団偓閼辨梻缍夌拫鍐暏 |
+| 閹碘晛鐫嶉幀?| 閼奉亜鐣炬稊?Skill 閼存碍婀?(Python/Node/Shell) | 娴犲懎閽╅崣鏉垮敶閹绘帊娆?|
+| 闁倻鏁ゆ禍铏瑰參 | 闁插秷顫嬮梾鎰潌閵嗕胶顬囩痪鍨簚閺咁垬鈧礁绱戦崣鎴ｂ偓?| 韫囶偊鈧喍绗傞幍瀣ㄢ偓浣风隘缁旑垰宕楁担?|
 
-## 瀹夎鏂瑰紡
+## 鐎瑰顥婇弬鐟扮础
 
-### 鏂瑰紡涓€锛氫綔涓?Codex 鎻掍欢瀹夎
+### 閺傜懓绱℃稉鈧敍姘稊娑?Codex 閹绘帊娆㈢€瑰顥?
 
-鍦?Codex 渚ц竟鏍?鈫?鎻掍欢甯傚満 鈫?鎼滅储 "Local Canvas" 鈫?鐐瑰嚮瀹夎銆?
+閸?Codex 娓氀嗙珶閺?閳?閹绘帊娆㈢敮鍌氭簚 閳?閹兼粎鍌?"Local Canvas" 閳?閻愮懓鍤€瑰顥婇妴?
 
-鎴栬€呮墜鍔ㄥ厠闅嗭細
+閹存牞鈧懏澧滈崝銊ュ帬闂呭棴绱?
 
 ```bash
 git clone https://github.com/1148194155-cell/bureau2.git
 ```
 
-### 鏂瑰紡浜岋細浣滀负 OpenAI 鍏煎 Skill 浣跨敤
+### 閺傜懓绱℃禍宀嬬窗娴ｆ粈璐?OpenAI 閸忕厧顔?Skill 娴ｈ法鏁?
 
-灏?`local-canvas/` 鐩綍鏀惧叆浠绘剰 OpenAI agent 鐨?skills 璺緞涓嬪嵆鍙嚜鍔ㄥ彂鐜般€?
+鐏?`local-canvas/` 閻╊喖缍嶉弨鎯у弳娴犵粯鍓?OpenAI agent 閻?skills 鐠侯垰绶炴稉瀣祮閸欘垵鍤滈崝銊ュ絺閻滆埇鈧?
 
-### 鏂瑰紡涓夛細鐙珛杩愯
+### 閺傜懓绱℃稉澶涚窗閻欘剛鐝涙潻鎰攽
 
 ```bash
-node -v  # 闇€瑕?Node.js >= 18
+node -v  # 闂団偓鐟?Node.js >= 18
 cd local-canvas/scripts
 npm install
 cd renderer
 npm install
 cd ..
-node src/index.js    # 鍚庣 http://localhost:3001
-npx vite --cwd renderer  # 鍓嶇 http://localhost:5173
+node src/index.js    # 閸氬海顏?http://localhost:3001
+npx vite --cwd renderer  # 閸撳秶顏?http://localhost:5173
 ```
 
-## 蹇€熷紑濮?
+## 韫囶偊鈧喎绱戞慨?
 
 ```powershell
-.\local-canvas\scripts\start.ps1           # 鍚姩鍓嶅悗绔?
-.\local-canvas\scripts\start.ps1 -NoBrowser # 涓嶈嚜鍔ㄦ墦寮€娴忚鍣?
-.\local-canvas\scripts\stop.ps1            # 鍋滄鏈嶅姟
+.\local-canvas\scripts\start.ps1           # 閸氼垰濮╅崜宥呮倵缁?
+.\local-canvas\scripts\start.ps1 -NoBrowser # 娑撳秷鍤滈崝銊﹀ⅵ瀵偓濞村繗顫嶉崳?
+.\local-canvas\scripts\stop.ps1            # 閸嬫粍顒涢張宥呭
 ```
 
-鍚姩鍚庤闂細
-- 鍓嶇鐣岄潰锛歨ttp://localhost:5173
-- 鍚庣 API锛歨ttp://localhost:3001/api
-- 鍋ュ悍妫€鏌ワ細http://localhost:3001/api/health
+閸氼垰濮╅崥搴ゎ問闂傤噯绱?
+- 閸撳秶顏悾宀勬桨閿涙ttp://localhost:5173
+- 閸氬海顏?API閿涙ttp://localhost:3001/api
+- 閸嬨儱鎮嶅Λ鈧弻銉窗http://localhost:3001/api/health
 
-## 椤圭洰缁撴瀯
+## 妞ゅ湱娲扮紒鎾寸€?
 
 ```
 local-canvas/
-鈹溾攢鈹€ skills/SKILL.md          # AI skill 鎸囦护
-鈹溾攢鈹€ agents/openai.yaml       # OpenAI agent 鍏冩暟鎹?
-鈹溾攢鈹€ .codex-plugin/plugin.json # Codex 鎻掍欢娓呭崟
-鈹溾攢鈹€ scripts/
-鈹?  鈹溾攢鈹€ src/                 # 鍚庣 (Express + SQLite + WebSocket)
-鈹?  鈹溾攢鈹€ renderer/            # 鍓嶇 (React + Vite + React Flow)
-鈹?  鈹溾攢鈹€ start.ps1            # 涓€閿惎鍔?(Windows)
-鈹?  鈹斺攢鈹€ stop.ps1             # 鍋滄鏈嶅姟
-鈹斺攢鈹€ assets/                  # 璧勬簮鏂囦欢
+閳规壕鏀㈤埞鈧?skills/SKILL.md          # AI skill 閹稿洣鎶?
+閳规壕鏀㈤埞鈧?agents/openai.yaml       # OpenAI agent 閸忓啯鏆熼幑?
+閳规壕鏀㈤埞鈧?.codex-plugin/plugin.json # Codex 閹绘帊娆㈠〒鍛礋
+閳规壕鏀㈤埞鈧?scripts/
+閳?  閳规壕鏀㈤埞鈧?src/                 # 閸氬海顏?(Express + SQLite + WebSocket)
+閳?  閳规壕鏀㈤埞鈧?renderer/            # 閸撳秶顏?(React + Vite + React Flow)
+閳?  閳规壕鏀㈤埞鈧?start.ps1            # 娑撯偓闁款喖鎯庨崝?(Windows)
+閳?  閳规柡鏀㈤埞鈧?stop.ps1             # 閸嬫粍顒涢張宥呭
+閳规柡鏀㈤埞鈧?assets/                  # 鐠у嫭绨弬鍥︽
 ```
 
-## 璁稿彲璇?
+## 鐠佺褰茬拠?
 
 [MIT](LICENSE)
 
 ---
 
-# Local Canvas 鈥?Visual AI Workflow Canvas
+# Local Canvas 閳?Visual AI Workflow Canvas
 
 Drag and drop nodes to build AI workflows. Fully local execution, multi-model support, knowledge base RAG, API integration, and built-in AI assistant.
 
 ## Features
 
-- **Drag-and-drop Canvas** 鈥?Visually build AI workflows
-- **Multi-model Support** 鈥?OpenAI / Ollama / Anthropic / llama.cpp / built鈥慽n local model
-- **Knowledge Base RAG** 鈥?Index local documents to enhance AI context
-- **API Integration** 鈥?Call external services within workflows
-- **Built-in AI Chat** 鈥?Natural language control over canvas operations
-- **Electron Desktop App** 鈥?Cross鈥憄latform for Windows / macOS / Linux
+- **Drag-and-drop Canvas** 閳?Visually build AI workflows
+- **Multi-model Support** 閳?OpenAI / Ollama / Anthropic / llama.cpp / built閳ユ吔n local model
+- **Knowledge Base RAG** 閳?Index local documents to enhance AI context
+- **API Integration** 閳?Call external services within workflows
+- **Built-in AI Chat** 閳?Natural language control over canvas operations
+- **Electron Desktop App** 閳?Cross閳ユ唲latform for Windows / macOS / Linux
+
+
+## Setup Guide
+
+### 1. Add OpenAI Model
+Open browser → `Settings` → `Model Config` → `Add`:
+
+| Field | Value |
+|-------|-------|
+| Name | Anything, e.g. `My GPT` |
+| Adapter | `OpenAI` |
+| API Endpoint | `https://api.openai.com/v1` |
+| Model ID | `gpt-4o` or `gpt-3.5-turbo` |
+| Key | Your `sk-` API Key |
+
+### 2. Add Ollama Local Model
+Make sure [Ollama](https://ollama.com) is installed and model pulled:
+
+```bash
+ollama pull qwen2.5:7b
+```
+
+Then add in Settings:
+
+| Field | Value |
+|-------|-------|
+| Name | `Local Ollama` |
+| Adapter | `Ollama` |
+| API Endpoint | `http://localhost:11434/v1` |
+| Model ID | `qwen2.5:7b` |
+
+### 3. Built-in Local Model (Optional)
+Requires downloading Qwen2.5-3B (~2.1GB), contact **WeChat: longggyt**.
+
+### 4. Add API Key
+`Settings` → `API Keys` → `Add` to manage keys centrally.
 
 ## Quick Start
 
-Double-click `start.bat` (or `鍚姩.bat`) 鈥?dependency installation and service startup handled automatically.
+Double-click `start.bat` (or `閸氼垰濮?bat`) 閳?dependency installation and service startup handled automatically.
 
 Or via PowerShell:
 
