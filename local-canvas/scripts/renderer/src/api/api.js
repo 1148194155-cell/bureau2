@@ -122,6 +122,17 @@ export async function getBuiltinStatus() {
   return data.data;
 }
 
+// --- Scanner
+export async function triggerRescan() {
+  const { data } = await api.post('/scanner/rescan');
+  return data.data;
+}
+
+export async function fetchDiscoveredSkills() {
+  const { data } = await api.get('/scanner/discovered');
+  return data.data || [];
+}
+
 // --- WebSocket ---
 export function createExecutionSocket(executionId) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";

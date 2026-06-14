@@ -14,9 +14,17 @@ import fs from 'fs-extra';
 
 const router = Router();
 
+// Execution cancel tracking
+const activeExecutions = new Map(); // executionId → AbortController
+
 // Scanner state tracking
-let scannerStatus = 'idle';
-let scannerLastScan = null; // ISO timestamp
+let _scannerPromise = null;
+let _scannerLastScan = null; // ISO timestamp
+
+// ★ Models cache
+let _modelsWithStatusCache = null;
+let _modelsWithStatusCacheTime = 0;
+const MODELS_STATUS_CACHE_TTL = 30000; // 30s
 
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
@@ -31,6 +39,22 @@ function getUserId(req) {
   const raw = req.headers['x-user-id'];
   return raw ? parseInt(raw, 10) || 1 : 1;
 }
+
+function requireAuth(req, res, next) {
+  const enableAuth = process.env.LC_ENABLE_AUTH === '1';
+  if (!enableAuth) return next();
+
+  const token = req.headers['x-auth-token'] || req.query.token;
+  const expected = process.env.LC_AUTH_TOKEN;
+  if (!expected) return next();
+
+  if (token !== expected) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  next();
+}
+
+router.use('/workflows', requireAuth);
 
 // Skill Routes
 
@@ -49,6 +73,11 @@ router.get('/skills', asyncHandler(async (req, res) => {
  * GET /api/models — return all models with online status.
  */
 router.get('/models', asyncHandler(async (req, res) => {
+  // 缓存命中直接返回
+  if (_modelsWithStatusCache && (Date.now() - _modelsWithStatusCacheTime) < MODELS_STATUS_CACHE_TTL) {
+    return res.json({ success: true, data: _modelsWithStatusCache });
+  }
+
   const db = getDb();
   const userId = getUserId(req);
   const models = await scanModels(db, userId);
@@ -62,19 +91,18 @@ router.get('/models', asyncHandler(async (req, res) => {
     m.source === 'user' || !userModelNames.has(m.name)
   );
 
-  // Ping each model to check status (non-blocking, best-effort, 3s timeout each)
+  // Ping each model to check status (parallel, 1.5s timeout each)
   const modelsWithStatus = await Promise.all(
     deduped.map(async (m) => {
+      if (m.online !== undefined) return m; // scanModels 已标了 online 的跳过
       let online = false;
       try {
         const adapter = createAdapter(m);
         online = await Promise.race([
           adapter.ping(),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('ping timeout')), 3000)),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 1500)),
         ]);
-      } catch {
-        // offline
-      }
+      } catch { /* offline */ }
       return { ...m, online };
     })
   );
@@ -85,6 +113,10 @@ router.get('/models', asyncHandler(async (req, res) => {
     delete config.apiKey;
     return { ...m, config };
   });
+
+  // 写缓存
+  _modelsWithStatusCache = safeModels;
+  _modelsWithStatusCacheTime = Date.now();
 
   res.json({ success: true, data: safeModels });
 }));
@@ -278,33 +310,6 @@ router.delete('/knowledge/:id', asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
-// Alias: /api/knowledge-bases → /api/knowledge (for compatibility)
-router.get('/knowledge-bases', asyncHandler(async (req, res) => {
-  const db = getDb();
-  const userId = getUserId(req);
-  const bases = db.prepare('SELECT id, user_id, name, folder_path, last_indexed, created_at FROM knowledge_bases WHERE user_id = ?').all(userId);
-  res.json({ success: true, data: bases });
-}));
-
-router.post('/knowledge-bases', asyncHandler(async (req, res) => {
-  const db = getDb();
-  const userId = getUserId(req);
-  const { name, folder_path } = req.body;
-
-  if (!name || !folder_path) {
-    return res.status(400).json({ success: false, error: 'name and folder_path are required' });
-  }
-
-  const result = db.prepare(
-    'INSERT INTO knowledge_bases (user_id, name, folder_path) VALUES (?, ?, ?)'
-  ).run(userId, name, folder_path);
-
-  res.json({
-    success: true,
-    data: { id: result.lastInsertRowid, name, folder_path },
-  });
-}));
-
 // Workflow Routes
 
 /**
@@ -478,8 +483,13 @@ router.post('/workflows/run', asyncHandler(async (req, res) => {
   logExecution(db, wsManager, executionId, 'review', reviewJson);
 
   // Execute asynchronously (non-blocking)
+  const abortController = new AbortController();
+  activeExecutions.set(executionId, abortController);
+
   executeWorkflowAsync(executionId, workflowDef, userId, db, skillsList, options || {}).catch(err => {
     console.error('[API] Unhandled execution error:', err.message);
+  }).finally(() => {
+    activeExecutions.delete(executionId);
   });
 }));
 
@@ -608,6 +618,30 @@ router.get('/executions/:id/status', asyncHandler(async (req, res) => {
   });
 }));
 
+/**
+ * POST /api/executions/:id/cancel — cancel a running execution.
+ */
+router.post('/executions/:id/cancel', asyncHandler(async (req, res) => {
+  const controller = activeExecutions.get(req.params.id);
+  if (!controller) {
+    // 可能已完成，检查 DB
+    const db = getDb();
+    const exec = db.prepare('SELECT status FROM executions WHERE id = ?').get(req.params.id);
+    if (!exec) return res.status(404).json({ success: false, error: 'Execution not found' });
+    if (exec.status === 'completed' || exec.status === 'failed' || exec.status === 'cancelled') {
+      return res.json({ success: true, data: { status: exec.status } });
+    }
+    return res.status(409).json({ success: false, error: 'Execution is not cancellable' });
+  }
+  controller.abort();
+  const db = getDb();
+  db.prepare("UPDATE executions SET status = 'cancelled', end_time = CURRENT_TIMESTAMP, error = 'Cancelled by user' WHERE id = ?")
+    .run(req.params.id);
+  logExecution(db, wsManager, req.params.id, 'warn', '执行已被用户取消');
+  wsManager.sendError(req.params.id, 'Cancelled by user');
+  res.json({ success: true, data: { status: 'cancelled' } });
+}));
+
 // API Key Routes
 
 /**
@@ -626,25 +660,12 @@ router.post('/apikeys', asyncHandler(async (req, res) => {
 
   const keyRef = `lc_${userId}_${name}_${Date.now()}`;
 
-  // Try keytar first, fall back to encrypted file storage
-  let stored = false;
-  try {
-    const keytar = await import('keytar');
-    await keytar.default.setPassword('LocalCanvas', keyRef, api_key);
-    stored = true;
-  } catch {
-    // keytar unavailable (no system keychain) — store encrypted locally
-    const { encrypt } = await import('../crypto.js');
-    const encrypted = encrypt(api_key);
-    const keyDir = path.join(os.homedir(), '.localcanvas', 'keys');
-    await fs.ensureDir(keyDir);
-    await fs.writeFile(path.join(keyDir, `${keyRef}.enc`), encrypted, 'utf8');
-    stored = true;
-  }
-
-  if (!stored) {
-    return res.status(500).json({ success: false, error: 'Failed to store API key' });
-  }
+  // Store encrypted locally
+  const { encrypt } = await import('../crypto.js');
+  const encrypted = encrypt(api_key);
+  const keyDir = path.join(os.homedir(), '.localcanvas', 'keys');
+  await fs.ensureDir(keyDir);
+  await fs.writeFile(path.join(keyDir, `${keyRef}.enc`), encrypted, 'utf8');
 
   const result = db.prepare(
     'INSERT INTO api_keys (user_id, name, key_ref) VALUES (?, ?, ?)'
@@ -682,14 +703,9 @@ router.delete('/apikeys/:id', asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: 'API key not found' });
   }
 
-  // Remove from keytar or filesystem
-  try {
-    const keytar = await import('keytar');
-    await keytar.default.deletePassword('LocalCanvas', key.key_ref);
-  } catch {
-    const keyPath = path.join(os.homedir(), '.localcanvas', 'keys', `${key.key_ref}.enc`);
-    await fs.remove(keyPath);
-  }
+  // Remove from filesystem
+  const keyPath = path.join(os.homedir(), '.localcanvas', 'keys', `${key.key_ref}.enc`);
+  await fs.remove(keyPath);
 
   db.prepare('DELETE FROM api_keys WHERE id = ?').run(req.params.id);
   res.json({ success: true });
@@ -801,33 +817,118 @@ router.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
 
+// Template Routes
+
+router.get('/templates', (req, res) => {
+  const templates = [
+    {
+      id: 'translate',
+      name: '翻译工作流',
+      description: '将用户输入的中文翻译成英文',
+      nodes: [
+        { id: 'in1', type: 'input', position: { x: 100, y: 100 }, data: { label: '输入', config: { input: '你好，世界' } } },
+        { id: 'm1', type: 'model', position: { x: 350, y: 100 }, data: { label: '翻译模型', config: { prompt: '把以下内容翻译成英文: {{input}}', temperature: 0.3 } } },
+        { id: 'out1', type: 'output', position: { x: 600, y: 100 }, data: { label: '输出' } },
+      ],
+      edges: [
+        { id: 'e1', source: 'in1', target: 'm1' },
+        { id: 'e2', source: 'm1', target: 'out1' },
+      ],
+    },
+    {
+      id: 'summarize',
+      name: '文本摘要',
+      description: '输入长文本，输出精简摘要',
+      nodes: [
+        { id: 'in1', type: 'input', position: { x: 100, y: 100 }, data: { label: '输入文章' } },
+        { id: 'm1', type: 'model', position: { x: 350, y: 100 }, data: { label: '摘要模型', config: { prompt: '请用三句话总结以下内容:\n\n{{input}}', temperature: 0.5 } } },
+        { id: 'out1', type: 'output', position: { x: 600, y: 100 }, data: { label: '摘要输出' } },
+      ],
+      edges: [
+        { id: 'e1', source: 'in1', target: 'm1' },
+        { id: 'e2', source: 'm1', target: 'out1' },
+      ],
+    },
+    {
+      id: 'code_gen',
+      name: '代码生成',
+      description: '用自然语言描述需求，生成代码并写入文件',
+      nodes: [
+        { id: 'in1', type: 'input', position: { x: 100, y: 100 }, data: { label: '需求描述', config: { input: '用 Python 写一个计算斐波那契数列的函数' } } },
+        { id: 'm1', type: 'model', position: { x: 350, y: 100 }, data: { label: '代码模型', config: { prompt: '根据以下需求生成代码，只输出代码不要解释:\n\n{{input}}', temperature: 0.2 } } },
+        { id: 'fo1', type: 'file_output', position: { x: 600, y: 100 }, data: { label: '保存代码', config: { format: 'txt', fileName: 'generated_code' } } },
+      ],
+      edges: [
+        { id: 'e1', source: 'in1', target: 'm1' },
+        { id: 'e2', source: 'm1', target: 'fo1' },
+      ],
+    },
+    {
+      id: 'web_analyze',
+      name: '网页分析',
+      description: '调用 API 抓取网页 → AI 分析内容 → 输出摘要',
+      nodes: [
+        { id: 'in1', type: 'input', position: { x: 100, y: 100 }, data: { label: '网页 URL', config: { input: 'https://example.com' } } },
+        { id: 'api1', type: 'api_caller', position: { x: 350, y: 60 }, data: { label: '抓取网页', config: { method: 'GET' } } },
+        { id: 'm1', type: 'model', position: { x: 600, y: 60 }, data: { label: 'AI 分析', config: { prompt: '分析以下网页内容并提取关键信息:\n\n{{input}}', temperature: 0.5 } } },
+        { id: 'out1', type: 'output', position: { x: 850, y: 100 }, data: { label: '分析结果' } },
+      ],
+      edges: [
+        { id: 'e1', source: 'in1', target: 'api1' },
+        { id: 'e2', source: 'api1', target: 'm1' },
+        { id: 'e3', source: 'm1', target: 'out1' },
+      ],
+    },
+    {
+      id: 'data_viz',
+      name: '数据处理 + 可视化',
+      description: '输入数据 → 代码处理 → 输出统计结果',
+      nodes: [
+        { id: 'in1', type: 'input', position: { x: 100, y: 100 }, data: { label: '原始数据', config: { input: '[{"name":"A","value":30},{"name":"B","value":50},{"name":"C","value":20}]' } } },
+        { id: 'c1', type: 'code', position: { x: 350, y: 100 }, data: { label: '数据处理', config: { code: 'const data = JSON.parse(typeof input === "string" ? input : input.input);\nconst labels = data.map(d => d.name);\nconst values = data.map(d => d.value);\n`数据共 ${data.length} 条，最大值 ${Math.max(...values)}，总和 ${values.reduce((a,b)=>a+b,0)}`;' } } },
+        { id: 'out1', type: 'output', position: { x: 600, y: 100 }, data: { label: '统计结果' } },
+      ],
+      edges: [
+        { id: 'e1', source: 'in1', target: 'c1' },
+        { id: 'e2', source: 'c1', target: 'out1' },
+      ],
+    },
+  ];
+  res.json({ success: true, data: templates });
+});
+
 // Scanner Routes
 
-/**
- * GET /api/scanner/status — get scanner status
- */
-router.get('/scanner/status', (req, res) => {
-  res.json({ success: true, data: { status: scannerStatus, lastScan: scannerLastScan } });
-});
 
 /**
  * POST /api/scanner/rescan — trigger a rescan of skills/models/apis
  */
 router.post('/scanner/rescan', asyncHandler(async (req, res) => {
   const db = getDb();
-  if (scannerStatus === 'scanning') {
-    return res.status(409).json({ success: false, error: 'Scanner is already running' });
+
+  // 如果已经有扫描在进行中，复用同一个 promise
+  if (_scannerPromise) {
+    await _scannerPromise;
+    return res.json({ success: true, data: { status: 'idle', lastScan: _scannerLastScan } });
   }
-  scannerStatus = 'scanning';
+
   const { autoDiscover } = await import('../scanner/autoDiscover.js');
+  _scannerPromise = autoDiscover(db)
+    .then(() => {
+      _scannerLastScan = new Date().toISOString();
+    })
+    .catch(err => {
+      _scannerLastScan = new Date().toISOString();
+      throw err;
+    })
+    .finally(() => {
+      _scannerPromise = null;
+    });
+
   try {
-    await autoDiscover(db);
-    scannerStatus = 'idle';
-    scannerLastScan = new Date().toISOString();
-    res.json({ success: true, data: { status: 'idle', lastScan: scannerLastScan } });
+    await _scannerPromise;
+    res.json({ success: true, data: { status: 'idle', lastScan: _scannerLastScan } });
   } catch (err) {
-    scannerStatus = 'error';
-    scannerLastScan = new Date().toISOString();
     res.status(500).json({ success: false, error: err.message });
   }
 }));

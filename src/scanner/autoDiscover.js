@@ -122,14 +122,14 @@ async function discoverModels(db) {
     'SELECT COUNT(*) as count FROM models WHERE user_id = ?'
   ).get(userId);
   if (total.count === 0) {
-    console.log('  + Model: Default (OpenAI GPT-4o) — add your API key in Settings');
+    console.log('  + Model: GPT-4o (default) — 请在设置中填入 API Key');
     db.prepare(
-      'INSERT INTO models (user_id, name, adapter_type, config, is_active) VALUES (?, ?, ?, ?, 1)'
-    ).run(userId, 'GPT-4o (default)', 'openai', JSON.stringify({
+      'INSERT INTO models (user_id, name, adapter_type, config, is_active) VALUES (?, ?, ?, ?, ?)'
+    ).run(userId, 'GPT-4o（需填入 API Key）', 'openai', JSON.stringify({
       endpoint: 'https://api.openai.com/v1',
       model: 'gpt-4o',
       apiKey: '',
-    }));
+    }), 0); // is_active=0，避免 ping 成功但实际不可用
   }
 
   console.log(`[AutoDiscover] Models: ready`);

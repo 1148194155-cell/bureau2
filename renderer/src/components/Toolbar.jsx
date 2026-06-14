@@ -1,15 +1,20 @@
-import { Play, Save, Download, FolderOpen, Undo2, Redo2, Trash2, Timer, GripHorizontal } from "lucide-react";
-import { useRef, useEffect, useCallback } from "react";
+import { Play, Save, Download, FolderOpen, Undo2, Redo2, Trash2, FilePlus, GripHorizontal } from "lucide-react";
+import { useRef, useEffect, useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
-import { saveWorkflow, listWorkflows, loadWorkflow, runWorkflow, createExecutionSocket } from "../api/api";
+import { saveWorkflow, runWorkflow, createExecutionSocket } from "../api/api";
 import { useI18n } from "../i18n";
+import SaveModal from "./SaveModal";
+import LoadModal from "./LoadModal";
 
 export default function Toolbar() {
   const store = useStore();
   const { t } = useI18n();
   const wsRef = useRef(null);
-  const handlersRef = useRef({});
+
+  // Modal state
+  const [showSaveModal, setShowSaveModal] = useState(false);
+  const [showLoadModal, setShowLoadModal] = useState(false);
 
   const handleRun = useCallback(async () => {
     const s = useStore.getState();
@@ -28,7 +33,7 @@ export default function Toolbar() {
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === "log") s.addExecutionLog(msg.data);
-        else if (msg.type === "complete") { s.setExecutionStatus("completed"); s.addExecutionLog({ level: "info", message: t('runLog.done') }); wsRef.current = null; }
+        else if (msg.type === "complete") { s.setExecutionStatus("completed"); s.addExecutionLog({ level: "info", message: t('runLog.done') }); wsRef.current = null; toast.success('工作流执行完成', { icon: '✅', duration: 4000 }); }
         else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); wsRef.current = null; }
       };
       ws.onerror = () => { wsRef.current = null; };
@@ -41,29 +46,32 @@ export default function Toolbar() {
     }
   }, [t]);
 
-  const handleSave = useCallback(async () => {
+  const handleSave = useCallback(async (name) => {
+    setShowSaveModal(false);
     const s = useStore.getState();
-    const name = prompt(t('toolbar.promptWorkflowName'), s.currentWorkflowName);
-    if (!name) return;
     try {
       const result = await saveWorkflow(name, s.nodes, s.edges, s.currentWorkflowId);
       s.setCurrentWorkflowId(result.id);
       s.setCurrentWorkflowName(name);
+      s.setDirty(false);
       toast.success(t('toolbar.saved'));
-    } catch { toast.error("Save failed"); }
+    } catch (err) {
+      toast.error(`Save failed: ${err?.response?.data?.error || err.message || 'Unknown error'}`);
+    }
   }, [t]);
 
-  const handleLoad = useCallback(async () => {
-    try {
-      const wfs = await listWorkflows();
-      if (wfs.length === 0) return toast(t('toolbar.noSaved'));
-      const names = wfs.map((w) => w.id + ": " + w.name).join("\n");
-      const id = prompt(t('toolbar.promptLoadId') + "\n\n" + names);
-      if (!id) return;
-      const wf = await loadWorkflow(parseInt(id));
-      useStore.setState({ nodes: wf.nodes || [], edges: wf.edges || [], currentWorkflowId: wf.id, currentWorkflowName: wf.name });
-      toast.success(t('toolbar.loaded') + wf.name);
-    } catch { toast.error("Load failed"); }
+  const handleLoad = useCallback(() => {
+    setShowLoadModal(true);
+  }, []);
+
+  const handleNew = useCallback(() => {
+    if (useStore.getState().nodes.length > 0) {
+      if (!confirm(t('toolbar.confirmNew'))) return;
+    }
+    useStore.getState().clearCanvas();
+    useStore.getState().setCurrentWorkflowName("Untitled");
+    useStore.getState().setCurrentWorkflowId(null);
+    toast.success(t('toolbar.newCreated'));
   }, [t]);
 
   const handleExport = useCallback(() => {
@@ -77,22 +85,20 @@ export default function Toolbar() {
     toast.success(t('toolbar.exported'));
   }, [t]);
 
-  // Keep handlersRef current for the keyboard effect
-  handlersRef.current = { handleSave, handleExport, handleLoad };
-
-  // Keyboard shortcuts — uses refs to avoid stale closures
+  // Keyboard shortcuts — use getState to avoid stale closures
   useEffect(() => {
     const onKey = (e) => {
       const ctrl = e.ctrlKey || e.metaKey;
-      if (ctrl && e.key === 's') { e.preventDefault(); handlersRef.current.handleSave(); }
-      if (ctrl && e.key === 'e') { e.preventDefault(); handlersRef.current.handleExport(); }
-      if (ctrl && e.key === 'o') { e.preventDefault(); handlersRef.current.handleLoad(); }
+      if (ctrl && e.key === 's') { e.preventDefault(); setShowSaveModal(true); }
+      if (ctrl && e.key === 'e') { e.preventDefault(); handleExport(); }
+      if (ctrl && e.key === 'o') { e.preventDefault(); handleLoad(); }
       if (ctrl && e.key === 'z') { e.preventDefault(); useStore.getState().undo(); }
       if (ctrl && e.key === 'y') { e.preventDefault(); useStore.getState().redo(); }
+      if (ctrl && e.key === 'n') { e.preventDefault(); handleNew(); }
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
-  }, []);
+  }, [handleLoad, handleNew, handleExport]);
 
   const handleClear = () => {
     if (!confirm(t('toolbar.confirmClear'))) return;
@@ -107,12 +113,14 @@ export default function Toolbar() {
       <div className="flex items-center gap-1.5 text-xs text-surface-400 min-w-0">
         <GripHorizontal size={12} className="text-surface-600 shrink-0" />
         <span className="font-medium text-surface-300 truncate max-w-[200px]">{store.currentWorkflowName || t('toolbar.workflowName')}</span>
+        {store.isDirty && <span className="w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" title="有未保存的更改" />}
       </div>
       <div className="flex-1" />
 
       <div className="flex items-center gap-0">
+        <TB icon={FilePlus} label={t('toolbar.newHint')} onClick={handleNew} />
         <TB icon={FolderOpen} label={t('toolbar.loadHint')} onClick={handleLoad} />
-        <TB icon={Save} label={t('toolbar.saveHint')} onClick={handleSave} />
+        <TB icon={Save} label={t('toolbar.saveHint')} onClick={() => setShowSaveModal(true)} />
         <TB icon={Download} label={t('toolbar.exportHint')} onClick={handleExport} />
       </div>
       <div className="w-px h-4 bg-surface-700/40 mx-0.5" />
@@ -123,11 +131,13 @@ export default function Toolbar() {
       </div>
       <div className="w-px h-4 bg-surface-700/40 mx-0.5" />
       <div className="flex items-center gap-0">
-        <TB icon={Timer} label={t('toolbar.triggerHint')} onClick={() => toast("Coming soon")} />
         <button onClick={handleRun} className="h-7 px-2.5 ml-1 rounded-lg bg-accent-600 hover:bg-accent-500 text-surface-950 text-xs font-semibold flex items-center gap-1 transition-colors shadow-sm shadow-accent-700/20">
           <Play size={11} />{t('toolbar.run')}
         </button>
       </div>
+
+      {showSaveModal && <SaveModal onSave={handleSave} onClose={() => setShowSaveModal(false)} />}
+      {showLoadModal && <LoadModal onClose={() => setShowLoadModal(false)} />}
     </div>
   );
 }

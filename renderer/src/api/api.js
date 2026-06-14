@@ -122,17 +122,78 @@ export async function getBuiltinStatus() {
   return data.data;
 }
 
+export async function cancelExecution(executionId) {
+  const { data } = await api.post(`/executions/${executionId}/cancel`);
+  return data.data;
+}
+
 // --- WebSocket ---
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
 export function createExecutionSocket(executionId) {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const host = window.location.host;
-  const ws = new WebSocket(`${protocol}//${host}/ws`);
+  let ws = null;
+  let retries = 0;
+  const MAX_RETRIES = 5;
 
-  ws.onopen = () => {
-    ws.send(JSON.stringify({ type: "subscribe", execution_id: executionId }));
+  function connect() {
+    ws = new WebSocket(`${protocol}//${host}/ws`);
+
+    ws.onopen = () => {
+      retries = 0;
+      ws.send(JSON.stringify({ type: "subscribe", execution_id: executionId }));
+    };
+
+    ws.onclose = async () => {
+      if (retries >= MAX_RETRIES) return;
+      retries++;
+      await sleep(Math.min(1000 * Math.pow(2, retries), 10000));
+      connect();
+    };
+  }
+
+  connect();
+
+  // 返回包装对象，重连时替换内部 ws
+  const proxy = {
+    set onmessage(fn) {
+      const setter = () => { ws.onmessage = fn; };
+      if (ws.readyState === WebSocket.OPEN) setter();
+      else ws.addEventListener('open', setter, { once: true });
+    },
+    set onerror(fn) {
+      const setter = () => { ws.onerror = fn; };
+      if (ws.readyState === WebSocket.OPEN) setter();
+      else ws.addEventListener('open', setter, { once: true });
+    },
+    set onclose(fn) {
+      const setter = () => { ws.onclose = fn; };
+      if (ws.readyState === WebSocket.OPEN) setter();
+      else ws.addEventListener('open', setter, { once: true });
+    },
+    close() { ws.close(); },
   };
 
-  return ws;
+  // 断线后通过 REST 补拉历史日志
+  ws.addEventListener('open', async () => {
+    try {
+      const status = await getExecutionStatus(executionId);
+      if (status?.logs) {
+        for (const log of status.logs) {
+          proxy.onmessage?.({ data: JSON.stringify({ type: 'log', data: log }) });
+        }
+      }
+      if (status?.status === 'completed' || status?.status === 'failed') {
+        proxy.onmessage?.({ data: JSON.stringify({
+          type: status.status === 'completed' ? 'complete' : 'error',
+          error: status.error,
+        })});
+      }
+    } catch {}
+  }, { once: true });
+
+  return proxy;
 }
 
 export default api;

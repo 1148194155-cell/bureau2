@@ -9,7 +9,7 @@ import path from 'node:path';
  */
 const CANVAS_TOOLS = [
   // Canvas operations
-  { type: 'function', function: { name: 'add_node', description: 'Add a new node to the canvas', parameters: { type: 'object', properties: { skill_id: { type: 'string', description: 'Skill ID' }, position_x: { type: 'number', description: 'X coordinate' }, position_y: { type: 'number', description: 'Y coordinate' }, label: { type: 'string', description: 'Node label (optional)' } }, required: ['skill_id', 'position_x', 'position_y'] } } },
+  { type: 'function', function: { name: 'add_node', description: 'Add a new node to the canvas', parameters: { type: 'object', properties: { skill_id: { type: 'string', description: 'Skill ID' }, node_type: { type: 'string', enum: ['skill', 'knowledge', 'output', 'file_output'], description: 'Node type' }, position_x: { type: 'number', description: 'X coordinate' }, position_y: { type: 'number', description: 'Y coordinate' }, label: { type: 'string', description: 'Node label (optional)' } }, required: ['skill_id', 'position_x', 'position_y'] } } },
   { type: 'function', function: { name: 'connect', description: 'Connect two nodes (data flows from source to target)', parameters: { type: 'object', properties: { source_node_id: { type: 'string', description: 'Source node ID' }, target_node_id: { type: 'string', description: 'Target node ID' } }, required: ['source_node_id', 'target_node_id'] } } },
   { type: 'function', function: { name: 'connect_with_mapping', description: 'Connect with field mapping, specifying which source field maps to which target field', parameters: { type: 'object', properties: { source_node_id: { type: 'string' }, target_node_id: { type: 'string' }, mapping: { type: 'object', description: 'Field mapping, e.g. { "targetField": "sourceField" }, supports dot-notation nested paths' } }, required: ['source_node_id', 'target_node_id', 'mapping'] } } },
   { type: 'function', function: { name: 'connect_with_condition', description: 'Connect with a condition — data flows only when the condition is met', parameters: { type: 'object', properties: { source_node_id: { type: 'string' }, target_node_id: { type: 'string' }, condition: { type: 'string', description: 'Condition expression, e.g. "output.score > 0.5"' } }, required: ['source_node_id', 'target_node_id', 'condition'] } } },
@@ -48,14 +48,14 @@ const CANVAS_TOOLS = [
 function buildSystemPrompt(lang) {
   const isCN = lang === 'zh';
   return isCN
-    ? `You are the AI assistant for Local Canvas, a visual AI workflow builder.
+    ? `你是 Local Canvas 的 AI 助手，一个可视化 AI 工作流构建工具。
 
-You can operate the canvas, manage models and knowledge bases, and read/write local files.
+你可以操作画布、管理模型和知识库、读写本地文件。
 
-Rules:
-- For greetings and simple questions, respond directly in Chinese without calling tools
-- Only call tools when the user explicitly asks for an action
-- Call one tool at a time, wait for the result before deciding the next step`
+规则：
+- 问候和简单问题直接回复，不要调用工具
+- 只在用户明确要求操作时才调用工具
+- 一次调用一个工具，等结果再决定下一步`
     : `You are the AI assistant for Local Canvas, a visual AI workflow builder.
 
 You can operate the canvas, manage models and knowledge bases, and read/write local files.
@@ -85,7 +85,7 @@ export async function handleChatMessage({ message, history, canvasState, adapter
     ...history.slice(-20), // keep last 20 history entries
     {
       role: 'user',
-      content: `Current canvas state:\nNodes: ${JSON.stringify(canvasState.nodes, null, 2)}\nEdges: ${JSON.stringify(canvasState.edges, null, 2)}\n\nUser message: ${message}`,
+      content: `Current canvas state:\nNodes: ${JSON.stringify(canvasState.nodes?.map(n => ({ id: n.id, type: n.type, label: n.data?.label, skillId: n.data?.skillId })) || [])}\nEdges: ${JSON.stringify(canvasState.edges?.map(e => ({ source: e.source, target: e.target })) || [])}\n\nUser message: ${message}`,
     },
   ];
 
@@ -115,10 +115,12 @@ export async function handleChatMessage({ message, history, canvasState, adapter
       try {
         let result;
         if (name === 'read_file') {
+          if (!isSafePath(args.file_path)) throw new Error('Access denied: path is outside allowed directories');
           const content = fs.readFileSync(args.file_path, 'utf8');
           result = { file: args.file_path, content: content.slice(0, 10000) };
           if (content.length > 10000) result.truncated = true;
         } else if (name === 'list_files') {
+          if (!isSafePath(args.dir_path)) throw new Error('Access denied: path is outside allowed directories');
           const entries = fs.readdirSync(args.dir_path, { withFileTypes: true });
           result = entries.map(e => ({
             name: e.name,
@@ -126,11 +128,12 @@ export async function handleChatMessage({ message, history, canvasState, adapter
           }));
         } else if (name === 'search_files') {
           const dir = args.dir_path || os.homedir();
+          if (!isSafePath(dir)) throw new Error('Access denied: path is outside allowed directories');
           result = searchFilesSync(dir, args.pattern, 2); // depth 2
         }
-        toolResults.push({ name, status: 'ok', result });
+        toolResults.push({ id: tc.id, name, status: 'ok', result, truncated: !!result?.truncated });
       } catch (err) {
-        toolResults.push({ name, status: 'error', error: err.message });
+        toolResults.push({ id: tc.id, name, status: 'error', error: err.message });
       }
     } else {
       // Frontend-executable tools, convert to actions
@@ -142,13 +145,18 @@ export async function handleChatMessage({ message, history, canvasState, adapter
   // 5. If there are backend execution results, feed them back to the model for final reply
   if (toolResults.length > 0) {
     const continuation = [...messages];
-    continuation.push({ role: 'assistant', content: reply });
+    continuation.push({ role: 'assistant', content: reply, tool_calls: toolCalls });
 
     for (const tr of toolResults) {
+      let resultStr = tr.status === 'ok'
+        ? JSON.stringify(tr.result)
+        : `error: ${tr.error}`;
+      // 如果结果被截断，告知模型
+      if (tr.truncated) resultStr += '\n[Note: output was truncated to 10000 characters]';
       const content = tr.status === 'ok'
-        ? `Tool "${tr.name}" executed successfully, result: ${JSON.stringify(tr.result)}`
+        ? `Tool "${tr.name}" result: ${resultStr}`
         : `Tool "${tr.name}" failed: ${tr.error}`;
-      continuation.push({ role: 'tool', content, tool_call_id: tr.name });
+      continuation.push({ role: 'tool', content, tool_call_id: tr.id });
     }
 
     continuation.push({ role: 'user', content: 'Please respond to the user based on the above results.' });
@@ -162,6 +170,36 @@ export async function handleChatMessage({ message, history, canvasState, adapter
   }
 
   return { reply, actions };
+}
+
+/**
+ * Path safety check: prevent access to system directories and hidden files.
+ */
+const FORBIDDEN_PREFIXES = [
+  '/etc', '/bin', '/usr', '/sys', '/proc', '/dev', '/boot',
+  'C:\\Windows', 'C:\\Windows\\System32',
+];
+
+function getAllowedRoots() {
+  return [os.homedir(), path.resolve('.')];
+}
+
+function isSafePath(inputPath) {
+  if (!inputPath || typeof inputPath !== 'string') return false;
+  const resolved = path.resolve(inputPath);
+  // Block system directories
+  for (const prefix of FORBIDDEN_PREFIXES) {
+    if (resolved.startsWith(path.resolve(prefix))) return false;
+  }
+  // Block hidden files/dirs (except . and ..)
+  const segments = resolved.split(path.sep);
+  for (const seg of segments) {
+    if (seg.startsWith('.') && seg !== '.' && seg !== '..') return false;
+  }
+  // Block access outside allowed roots (symlink-traversal protection)
+  const allowedRoots = getAllowedRoots();
+  const isAllowed = allowedRoots.some(root => resolved.startsWith(root));
+  return isAllowed;
 }
 
 /**
@@ -187,7 +225,8 @@ function searchFilesSync(dir, pattern, maxDepth, _depth = 0) {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     const results = [];
-    for (const e of entries) {
+    // Cap entries per directory to prevent OOM on huge directories
+    for (const e of entries.slice(0, 500)) {
       if (e.name.startsWith('.') || e.name === 'node_modules') continue;
       const fullPath = path.join(dir, e.name);
       if (e.name.toLowerCase().includes(pattern.toLowerCase())) {
@@ -209,8 +248,8 @@ function parseAction(name, args) {
     add_node: () => ({
       type: 'add_node',
       payload: {
-        nodeType: 'skill',
-        data: { label: args.label || '', skillId: args.skill_id },
+        nodeType: args.node_type || 'skill',
+        data: { label: args.label || '', skillId: args.skill_id, description: args.description },
         position: args.position_x != null ? { x: args.position_x, y: args.position_y } : undefined,
       },
     }),

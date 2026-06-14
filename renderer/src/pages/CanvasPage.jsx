@@ -1,5 +1,5 @@
 import { ReactFlowProvider } from "@xyflow/react";
-import { useRef } from "react";
+import { useRef, useEffect } from "react";
 import Toolbar from "../components/Toolbar";
 import ResourcePanel from "../components/ResourcePanel";
 import Canvas from "../components/Canvas";
@@ -7,12 +7,22 @@ import AIChat from "../components/AIChat";
 import NodeConfigPopover from "../components/NodeConfigPopover";
 import EdgeMappingModal from "../components/EdgeMappingModal";
 import RunLogWindow from "../components/RunLogWindow";
+import PrivacyBadge from "../components/PrivacyBadge";
+import ErrorBoundary from "../components/ErrorBoundary";
 import useStore from "../store/store";
 
 export default function CanvasPage() {
-  const { aiPanelWidth, setAiPanelWidth } = useStore();
+  const { aiPanelWidth, setAiPanelWidth, isDirty } = useStore();
   const resizeRef = useRef(null);
   const resizing = useRef(false);
+
+  // 未保存更改提示
+  useEffect(() => {
+    if (!isDirty) return;
+    const handler = (e) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', handler);
+    return () => window.removeEventListener('beforeunload', handler);
+  }, [isDirty]);
 
   const onMouseDown = (e) => {
     resizing.current = true;
@@ -27,6 +37,7 @@ export default function CanvasPage() {
   };
 
   return (
+    <ErrorBoundary>
     <ReactFlowProvider>
       <div className="h-full flex flex-col">
         <Toolbar />
@@ -46,7 +57,9 @@ export default function CanvasPage() {
         <NodeConfigPopover />
         <EdgeMappingModal />
         <RunLogWindow />
+        <PrivacyBadge />
       </div>
     </ReactFlowProvider>
+    </ErrorBoundary>
   );
 }

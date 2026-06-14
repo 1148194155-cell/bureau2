@@ -9,8 +9,21 @@ export default function EdgeMappingModal() {
   if (!edgeMapping) return null;
 
   const { source, target, connection } = edgeMapping;
-  const sourceFields = source.type === "skill" ? ["output", "result", "text", "data"] : source.type === "knowledge" ? ["documents", "chunks", "context"] : ["output"];
-  const targetFields = target.type === "skill" ? ["input", "text", "prompt", "data"] : target.type === "knowledge" ? ["query", "search", "filter"] : ["input"];
+  const sourceFields =
+    source.type === "skill" ? ["output", "result", "text", "data"] :
+    source.type === "knowledge" ? ["documents", "chunks", "context"] :
+    source.type === "model" ? ["content", "usage", "raw"] :
+    source.type === "api_caller" ? ["body", "status", "headers"] :
+    source.type === "code" ? ["result", "output"] :
+    ["output"];
+
+  const targetFields =
+    target.type === "skill" ? ["input", "text", "prompt", "data"] :
+    target.type === "knowledge" ? ["query", "search", "filter"] :
+    target.type === "model" ? ["prompt", "system", "input"] :
+    target.type === "condition" ? ["input", "value"] :
+    target.type === "api_caller" ? ["body", "query", "url"] :
+    ["input"];
 
   const [sourceField, setSourceField] = useState(sourceFields[0]);
   const [targetField, setTargetField] = useState(targetFields[0]);

@@ -1,7 +1,9 @@
 import { useRef, useState, useEffect } from "react";
-import { X, Eraser, Download, Loader2, CheckCircle2, XCircle } from "lucide-react";
+import { X, Eraser, Download, Loader2, CheckCircle2, XCircle, Square } from "lucide-react";
+import toast from "react-hot-toast";
 import useStore from "../store/store";
 import { useI18n } from "../i18n";
+import { cancelExecution } from "../api/api";
 
 export default function RunLogWindow() {
   const { t } = useI18n();
@@ -49,6 +51,17 @@ export default function RunLogWindow() {
           {executionStatus === "running" && <Loader2 size={10} className="text-amber-400 animate-spin" />}
           {executionStatus === "completed" && <CheckCircle2 size={10} className="text-emerald-400" />}
           {executionStatus === "failed" && <XCircle size={10} className="text-red-400" />}
+          {executionStatus === "running" && (
+            <button onClick={async () => {
+              const id = useStore.getState().executionId;
+              if (!id) return;
+              try { await cancelExecution(id); } catch {}
+            }}
+              className="w-5 h-5 flex items-center justify-center rounded text-red-400 hover:text-red-300 hover:bg-red-500/10 transition-colors ml-0.5"
+              title="取消执行">
+              <Square size={10} />
+            </button>
+          )}
         </div>
         <div className="ml-auto flex items-center gap-0.5">
           <button onClick={() => useStore.setState({ executionLogs: [] })} className="w-6 h-6 flex items-center justify-center rounded-md text-surface-600 hover:text-surface-300 transition-colors" title={t('runLog.clear')}>
@@ -69,15 +82,41 @@ export default function RunLogWindow() {
           <div className="text-amber-500/40 py-8 text-center">{t('runLog.waiting')}</div>
         )}
         {executionLogs.map((log, i) => (
-          <div key={i} className={"px-1 " + (
-            log.level === "error" ? "text-red-400" :
-            log.level === "warn" ? "text-amber-400" :
-            "text-amber-400/70"
-          )}>
-            <span className="text-surface-700 mr-2 select-none">
-              {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "--:--:--"}
-            </span>
-            {log.message}
+          <div key={i}>
+            <div className={"px-1 " + (
+              log.level === "error" ? "text-red-400" :
+              log.level === "warn" ? "text-amber-400" :
+              "text-amber-400/70"
+            )}>
+              <span className="text-surface-700 mr-2 select-none">
+                {log.timestamp ? new Date(log.timestamp).toLocaleTimeString() : "--:--:--"}
+              </span>
+              {log.message}
+            </div>
+            {log.level === 'info' && log.message.includes('File written:') && (() => {
+              const match = log.message.match(/File written:\s*(.+?)\s*\((\d+)\s*bytes/);
+              if (!match) return null;
+              const filePath = match[1];
+              return (
+                <div className="mt-1 ml-[64px] flex items-center gap-1">
+                  <button onClick={() => {
+                    const ext = filePath.split('.').pop().toLowerCase();
+                    if (['html','png','jpg','jpeg','gif','svg','webp','json','txt','md','csv'].includes(ext)) {
+                      window.open(`file:///${filePath.replace(/\\/g, '/')}`, '_blank');
+                    } else {
+                      navigator.clipboard.writeText(filePath);
+                      toast.success('路径已复制: ' + filePath);
+                    }
+                  }} className="text-[10px] px-1.5 py-0.5 rounded-md bg-accent-500/10 text-accent-400 hover:bg-accent-500/20 transition-colors">
+                    打开文件
+                  </button>
+                  <button onClick={() => { navigator.clipboard.writeText(filePath); toast.success('已复制路径'); }}
+                    className="text-[10px] px-1.5 py-0.5 rounded-md bg-surface-700/50 text-surface-400 hover:text-surface-300 transition-colors">
+                    复制路径
+                  </button>
+                </div>
+              );
+            })()}
           </div>
         ))}
       </div>

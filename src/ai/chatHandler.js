@@ -9,7 +9,7 @@ import path from 'node:path';
  */
 const CANVAS_TOOLS = [
   // Canvas operations
-  { type: 'function', function: { name: 'add_node', description: 'Add a new node to the canvas', parameters: { type: 'object', properties: { skill_id: { type: 'string', description: 'Skill ID' }, node_type: { type: 'string', enum: ['skill', 'knowledge', 'output', 'file_output'], description: 'Node type' }, position_x: { type: 'number', description: 'X coordinate' }, position_y: { type: 'number', description: 'Y coordinate' }, label: { type: 'string', description: 'Node label (optional)' } }, required: ['skill_id', 'position_x', 'position_y'] } } },
+  { type: 'function', function: { name: 'add_node', description: 'Add a new node to the canvas', parameters: { type: 'object', properties: { skill_id: { type: 'string', description: 'Skill ID' }, node_type: { type: 'string', enum: ['skill', 'knowledge', 'output', 'file_output', 'model', 'input', 'code', 'api_caller', 'condition'], description: 'Node type' }, position_x: { type: 'number', description: 'X coordinate' }, position_y: { type: 'number', description: 'Y coordinate' }, label: { type: 'string', description: 'Node label (optional)' } }, required: ['skill_id', 'position_x', 'position_y'] } } },
   { type: 'function', function: { name: 'connect', description: 'Connect two nodes (data flows from source to target)', parameters: { type: 'object', properties: { source_node_id: { type: 'string', description: 'Source node ID' }, target_node_id: { type: 'string', description: 'Target node ID' } }, required: ['source_node_id', 'target_node_id'] } } },
   { type: 'function', function: { name: 'connect_with_mapping', description: 'Connect with field mapping, specifying which source field maps to which target field', parameters: { type: 'object', properties: { source_node_id: { type: 'string' }, target_node_id: { type: 'string' }, mapping: { type: 'object', description: 'Field mapping, e.g. { "targetField": "sourceField" }, supports dot-notation nested paths' } }, required: ['source_node_id', 'target_node_id', 'mapping'] } } },
   { type: 'function', function: { name: 'connect_with_condition', description: 'Connect with a condition — data flows only when the condition is met', parameters: { type: 'object', properties: { source_node_id: { type: 'string' }, target_node_id: { type: 'string' }, condition: { type: 'string', description: 'Condition expression, e.g. "output.score > 0.5"' } }, required: ['source_node_id', 'target_node_id', 'condition'] } } },
@@ -48,14 +48,14 @@ const CANVAS_TOOLS = [
 function buildSystemPrompt(lang) {
   const isCN = lang === 'zh';
   return isCN
-    ? `You are the AI assistant for Local Canvas, a visual AI workflow builder.
+    ? `你是 Local Canvas 的 AI 助手，一个可视化 AI 工作流构建工具。
 
-You can operate the canvas, manage models and knowledge bases, and read/write local files.
+你可以操作画布、管理模型和知识库、读写本地文件。
 
-Rules:
-- For greetings and simple questions, respond directly in Chinese without calling tools
-- Only call tools when the user explicitly asks for an action
-- Call one tool at a time, wait for the result before deciding the next step`
+规则：
+- 问候和简单问题直接回复，不要调用工具
+- 只在用户明确要求操作时才调用工具
+- 一次调用一个工具，等结果再决定下一步`
     : `You are the AI assistant for Local Canvas, a visual AI workflow builder.
 
 You can operate the canvas, manage models and knowledge bases, and read/write local files.
@@ -180,6 +180,8 @@ const FORBIDDEN_PREFIXES = [
   'C:\\Windows', 'C:\\Windows\\System32',
 ];
 
+const SENSITIVE_HIDDEN = new Set(['.git', '.ssh', '.gnupg', '.aws', '.azure', '.docker']);
+
 function getAllowedRoots() {
   return [os.homedir(), path.resolve('.')];
 }
@@ -191,10 +193,10 @@ function isSafePath(inputPath) {
   for (const prefix of FORBIDDEN_PREFIXES) {
     if (resolved.startsWith(path.resolve(prefix))) return false;
   }
-  // Block hidden files/dirs (except . and ..)
+  // Only block known sensitive hidden directories (not all .dotdirs)
   const segments = resolved.split(path.sep);
   for (const seg of segments) {
-    if (seg.startsWith('.') && seg !== '.' && seg !== '..') return false;
+    if (SENSITIVE_HIDDEN.has(seg)) return false;
   }
   // Block access outside allowed roots (symlink-traversal protection)
   const allowedRoots = getAllowedRoots();

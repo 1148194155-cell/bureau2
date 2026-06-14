@@ -1,5 +1,5 @@
 ﻿import { useState, useRef, useEffect } from "react";
-import { Send, Sparkles, Trash2, Plus, User, Loader2, ChevronDown, Paperclip } from "lucide-react";
+import { Send, Sparkles, Trash2, Plus, User, Loader2, Paperclip, RotateCcw } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
@@ -12,7 +12,6 @@ export default function AIChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("");
-  const [showHistory, setShowHistory] = useState(false);
   const [chatTitle, setChatTitle] = useState(t('chat.title'));
   const [builtinReady, setBuiltinReady] = useState(false);
   const messagesEndRef = useRef(null);
@@ -34,13 +33,37 @@ export default function AIChat() {
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // 检查文件大小（>10MB 拒绝）
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error('文件过大（最大 10MB）');
+      e.target.value = '';
+      return;
+    }
+
+    // 检查是否文本文件
+    const textExts = ['.txt','.md','.json','.js','.jsx','.ts','.tsx','.py','.html','.css','.csv','.xml','.yaml','.yml','.log','.sh','.env','.cfg','.ini','.toml','.sql','.java','.c','.cpp','.h','.go','.rs','.rb','.php'];
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    const isText = textExts.includes(ext) || file.type.startsWith('text/') || file.type === 'application/json';
+
+    if (!isText) {
+      toast.error(`不支持的文件类型: ${ext}。仅支持文本文件。`);
+      e.target.value = '';
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (ev) => {
       const content = ev.target.result;
-      setInput(`文件 ${file.name} 的内容：\n\`\`\`\n${content}\n\`\`\``);
+      const truncated = content.length > 5000
+        ? content.slice(0, 5000) + '\n... (内容已截断)'
+        : content;
+      setInput(`文件 ${file.name} 的内容：\n\`\`\`\n${truncated}\n\`\`\``);
+    };
+    reader.onerror = () => {
+      toast.error(`文件读取失败: ${file.name}`);
     };
     reader.readAsText(file);
-    // 重置 input 以允许重复选择同一文件
     e.target.value = '';
   };
 
@@ -190,9 +213,6 @@ export default function AIChat() {
         </div>
         <input value={chatTitle} onChange={(e) => setChatTitle(e.target.value)}
           className="flex-1 bg-transparent text-xs font-medium text-surface-200 outline-none border-none" />
-        <button onClick={() => setShowHistory(!showHistory)} className="w-6 h-6 flex items-center justify-center rounded-md text-surface-500 hover:text-surface-300 transition-colors" title={t('chat.history')}>
-          <ChevronDown size={12} className={showHistory ? "rotate-180" : ""} />
-        </button>
         <select value={selectedModel} onChange={(e) => setSelectedModel(e.target.value)}
           className="h-6 px-1.5 rounded-md bg-surface-800 border border-surface-600 text-[10px] text-surface-300 outline-none">
           <option value="">{t('chat.defaultModel')}</option>
@@ -218,11 +238,20 @@ export default function AIChat() {
               <div className="text-[10px] text-surface-600">{t('chat.subtitle')}</div>
             </div>
             <div className="flex flex-wrap gap-1 justify-center mt-1">
-              {t('chat.hints').map((hint) => (
-                <button key={hint} onClick={() => setInput(hint)} className="px-2 py-1 rounded-lg bg-surface-700/40 hover:bg-surface-700 border border-surface-600/30 text-[10px] text-surface-400 hover:text-surface-200 transition-colors">
-                  {hint}
-                </button>
-              ))}
+              {(() => {
+                const s = useStore.getState();
+                const hints = [];
+                if (s.models.length > 1) hints.push('帮我搭一个翻译工作流');
+                if (s.models.length > 0) hints.push('用 AI 帮我写一段代码');
+                if (s.knowledgeBases?.length > 0) hints.push('从这个知识库里搜索相关内容');
+                hints.push('清空画布', '帮我连线节点');
+                return hints.map(hint => (
+                  <button key={hint} onClick={() => setInput(hint)}
+                    className="px-2 py-1 rounded-lg bg-surface-700/40 hover:bg-surface-700 border border-surface-600/30 text-[10px] text-surface-400 hover:text-surface-200 transition-colors">
+                    {hint}
+                  </button>
+                ));
+              })()}
             </div>
           </div>
         )}
@@ -252,6 +281,17 @@ export default function AIChat() {
                 <User size={11} className="text-surface-400" />
               </div>
             )}
+            {msg.role === "assistant" && (msg.content.includes('失败') || msg.content.includes('failed') || msg.content.includes('error')) && (() => {
+              const userMsgIdx = chatMessages.slice(0, i).findLastIndex(m => m.role === 'user');
+              const userMsg = userMsgIdx >= 0 ? chatMessages[userMsgIdx] : null;
+              if (!userMsg) return null;
+              return (
+                <button onClick={() => { setInput(userMsg.content); handleSend(); }}
+                  className="mt-1 text-[10px] px-2 py-0.5 rounded-md bg-surface-700/50 text-surface-400 hover:text-surface-200 transition-colors flex items-center gap-1">
+                  <RotateCcw size={10} /> 重试
+                </button>
+              );
+            })()}
           </div>
         ))}
 

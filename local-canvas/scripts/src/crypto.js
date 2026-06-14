@@ -1,26 +1,33 @@
 import crypto from 'node:crypto';
+import path from 'node:path';
+import fs from 'fs-extra';
 import os from 'node:os';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
 
-/**
- * Derive an encryption key from a static app secret.
- * In production, use a proper key management system.
- */
 function deriveKey() {
-  // Derive from machine-identity to avoid hardcoding
-  const machineId = os.hostname() + os.userInfo().username;
-  const salt = crypto.createHash('sha256').update(machineId).digest('hex').slice(0, 16);
-  return crypto.scryptSync('local-canvas-secret-key', salt, KEY_LENGTH);
+  const envKey = process.env.LC_MASTER_KEY;
+  if (envKey) {
+    return crypto.scryptSync(envKey, 'localcanvas-salt', KEY_LENGTH);
+  }
+
+  const keyfilePath = path.join(os.homedir(), '.localcanvas', '.masterkey');
+  try {
+    const savedKey = fs.readFileSync(keyfilePath, 'utf8').trim();
+    if (savedKey.length >= 32) {
+      return crypto.scryptSync(savedKey, 'localcanvas-salt', KEY_LENGTH);
+    }
+  } catch { /* keyfile not found */ }
+
+  const newKey = crypto.randomBytes(32).toString('hex');
+  fs.ensureDirSync(path.dirname(keyfilePath));
+  fs.writeFileSync(keyfilePath, newKey, { mode: 0o600 });
+  return crypto.scryptSync(newKey, 'localcanvas-salt', KEY_LENGTH);
 }
 
 const ENCRYPTION_KEY = deriveKey();
 
-/**
- * Encrypt a plaintext string.
- * Returns: hex-encoded { iv, encrypted, authTag } format: "iv:authTag:encrypted"
- */
 export function encrypt(plaintext) {
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv(ALGORITHM, ENCRYPTION_KEY, iv);
@@ -30,10 +37,6 @@ export function encrypt(plaintext) {
   return `${iv.toString('hex')}:${authTag}:${encrypted}`;
 }
 
-/**
- * Decrypt a previously encrypted string.
- * Input format: "iv:authTag:encrypted" (hex-encoded)
- */
 export function decrypt(encryptedText) {
   const parts = encryptedText.split(':');
   if (parts.length !== 3) {

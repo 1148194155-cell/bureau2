@@ -15,24 +15,6 @@ Local Canvas 是一个搭 AI 工作流的本地工具。你可以在白板上拖
 - **本地 AI 对话** — 右侧面板直接用大白话指挥 AI 操作画布
 - **Electron 桌面应用** — Windows / macOS / Linux 全平台
 
-## 界面预览
-
-> 截图路径 docs/screenshot.png，运行 `take_screenshot.mjs` 可自动生成。
-
-拖拽节点 → 连线 → AI 对话 → 运行
-
-![Local Canvas 界面](docs/screenshot.png)
-
-### 5 分钟体验流程
-
-| 步骤 | 操作 | 耗时 |
-|------|------|------|
-| 1 | 双击 `start.bat` | 30 秒 |
-| 2 | 设置 → 添加 OpenAI Key | 1 分钟 |
-| 3 | 拖一个模型节点到画布 | 10 秒 |
-| 4 | 连线 → 点运行 | 5 秒 |
-| 5 | 看到结果 | 即时 |
-
 ## 对比
 
 | 维度 | Local Canvas | Coze |
@@ -40,9 +22,9 @@ Local Canvas 是一个搭 AI 工作流的本地工具。你可以在白板上拖
 | 数据隐私 | 100% 本地，数据不外传 | 云端存储 |
 | 支持模型 | OpenAI/Ollama/Anthropic/llama.cpp/本地GGUF | 10+ 种平台内置 |
 | 离线运行 | 需先下载模型，之后可离线 | 不支持 |
-| 运行模式 | 单次手动触发 + 可编程调度 | 定时/循环/事件触发 |
-| 使用场景 | 桌面端深度工作 | 全平台（含移动端） |
-| 协作方式 | 单用户本地（Git 可做版本管理） | 多人在线协作 |
+| 循环/定时器 | 不支持 | 支持 |
+| 移动端 | 不支持 | 支持 |
+| 团队协作 | 不支持 | 支持 |
 | 开箱即用 | 需装 Node.js + 配模型 | 注册即用 |
 | 工作流自由度 | 无限节点 + 自由连线 | 有复杂度限制 |
 | Skill 生态 | 自定义 Python/Node/Shell | 官方插件市场 |
@@ -99,7 +81,7 @@ localcanvas/
 
 ## 可用 Skill 目录
 
-内置的 `~/.localcanvas/skills/` 包含 30+ 个可直接使用的 Skill：文本摘要、翻译、代码生成、图片生成、数据可视化、网页抓取、邮件发送、文档转换等。
+内置的 `~/.localcanvas/skills/` 包含 30+ 个开箱即用的 Skill：文本摘要、翻译、代码生成、图片生成、数据可视化、网页抓取、邮件发送、文档转换等。
 
 同时自动发现 `~/.codex/skills/` 和 `~/.agents/skills/` 下的 SKILL.md 技能。
 
@@ -121,39 +103,6 @@ npm run dev:frontend
 # 生产构建
 npm run build
 ```
-
-## 为什么可以信任
-
-| 你的顾虑 | 实际情况 |
-|----------|---------|
-| "数据会不会上传？" | 不会。数据库路径 `~/.localcanvas/localcanvas.db`，代码全部开源可审计。断网后仍可正常运行。 |
-| "API Key 安全吗？" | AES-256-GCM 加密存储在 `~/.localcanvas/.masterkey`，仅当前用户可读。 |
-| "代码有没有后门？" | 全部后端模块 MIT 开源，`npm run test` 可直接验证。 |
-| "有人在用吗？" | 开发者自用超过 3 个月，已跑通 50+ 个工作流场景。 |
-| "出问题找谁？" | [GitHub Issues](https://github.com/1148194155-cell/bureau2/issues) |
-
-<details>
-<summary>技术验证方法</summary>
-
-```bash
-# 1. 检查数据是否在本地
-ls ~/.localcanvas/
-# → localcanvas.db .masterkey skills/ keys/
-
-# 2. 断网测试
-# 断开 WiFi → 打开 Local Canvas → 仍可正常运行
-
-# 3. 运行自动化测试
-npm test
-# → 12/12 PASS
-```
-</details>
-
-## 获取帮助
-
-- [提交 Issue](https://github.com/1148194155-cell/bureau2/issues/new?template=bug_report.md) — 报告问题或功能请求
-- [讨论区](https://github.com/1148194155-cell/bureau2/discussions) — 使用技巧和最佳实践
-- 微信: longggyt（仅限模型下载和技术支持）
 
 ## License
 

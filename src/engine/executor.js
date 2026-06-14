@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process';
 import vm from 'node:vm';
 import path from 'node:path';
 import fs from 'fs-extra';
+import { getDb } from '../db.js';
 
 /**
  * Workflow Execution Engine
@@ -44,7 +45,7 @@ export async function executeWorkflow({
     throw new Error('Workflow contains a cycle — cannot execute');
   }
 
-  onLog('info', `Workflow execution started with ${sorted.length} nodes in order`);
+  onLog('info', `开始执行工作流，共 ${sorted.length} 个节点`);
 
   // Build adjacency data: which edges feed into which node
   const results = [];
@@ -107,7 +108,7 @@ export async function executeWorkflow({
           outputs[node.id] = result;
           onLog('debug', `Node ${node.id} output type: ${typeof result}, isEmpty: ${result && typeof result === 'object' && Object.keys(result).length === 0 ? 'YES' : 'NO'}`);
           results.push({ nodeId: node.id, nodeName: node.data?.label || node.type, success: true, output: result });
-          onLog('info', `Node "${node.data?.label || node.id}" completed successfully`);
+          onLog('info', `✓ ${node.data?.label || node.id} 执行完成`);
 
           // Add dependents whose all dependencies are now satisfied
           for (const edge of dependents[node.id] || []) {
@@ -121,7 +122,8 @@ export async function executeWorkflow({
         } catch (err) {
           results.push({ nodeId: node.id, nodeName: node.data?.label || node.type, success: false, error: err.message });
           onLog('error', `Node "${node.data?.label || node.id}" failed: ${err.message}`);
-          throw err; // fail the workflow
+          outputs[node.id] = null;
+          return null;
         }
       })
     );
@@ -143,10 +145,11 @@ export async function executeWorkflow({
     };
   }).filter(Boolean);
 
-  onLog('info', 'Workflow execution completed');
+  onLog('info', '工作流执行完成');
 
+  const allPassed = results.every(r => r.success);
   return {
-    success: true,
+    success: allPassed,
     results,
     outputFiles,
   };
@@ -167,14 +170,41 @@ async function executeNode(node, inputData, { skills, adapters, onLog, timeout, 
   } else if (nodeType === 'output') {
     return inputData;
   } else if (nodeType === 'knowledge') {
-    // Knowledge node passes through upstream data for RAG-style processing
-    return inputData;
+    const kbId = node.data?.config?.knowledgeBaseId || node.data?.kb_id;
+    const query = inputData?.query || inputData?.input || JSON.stringify(inputData);
+    if (!kbId) throw new Error('Knowledge node missing knowledgeBaseId');
+    const db = getDb();
+    const chunks = db.prepare(
+      'SELECT content, file_path FROM knowledge_chunks WHERE knowledge_base_id = ? LIMIT 10'
+    ).all(kbId);
+    return { query, results: chunks.map(c => ({ content: c.content, source: c.file_path })) };
+  } else if (nodeType === 'condition') {
+    const expr = node.data?.config?.expression || node.data?.expression || '';
+    if (!expr) return { passed: true, value: inputData };
+    const condSandbox = { input: inputData };
+    const condCtx = vm.createContext(condSandbox);
+    const condResult = new vm.Script(`(${expr})`).runInContext(condCtx, { timeout: 2000 });
+    return { passed: !!condResult, value: inputData };
+  } else if (nodeType === 'api') {
+    const url = node.data?.config?.url || node.data?.url;
+    const method = (node.data?.config?.method || node.data?.method || 'GET').toUpperCase();
+    const apiHeaders = node.data?.config?.headers || node.data?.headers || {};
+    const body = node.data?.config?.body || inputData;
+    if (!url) throw new Error('API node missing url');
+    const resp = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...apiHeaders },
+      body: method !== 'GET' ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeout),
+    });
+    const text = await resp.text();
+    try { return JSON.parse(text); } catch { return { status: resp.status, body: text }; }
   } else if (nodeType === 'code') {
     return executeCodeNode(node, inputData, onLog, timeout);
   } else if (nodeType === 'file_output') {
-    return executeFileOutputNode(node, inputData, onLog, { outputDir });
+    return executeFileOutputNode(node, inputData, onLog);
   } else {
-    throw new Error(`Unknown node type "${nodeType}". Supported types: model, llm, ai, skill, input, output, code, file_output`);
+    throw new Error(`Unknown node type "${nodeType}". Supported: model, llm, ai, skill, input, output, code, file_output, knowledge, condition, api`);
   }
 }
 
@@ -297,7 +327,7 @@ async function executeLLMNode(node, inputData, adapters, onLog, timeout) {
   }
   messages.push({ role: 'user', content: typeof userPrompt === 'string' ? userPrompt : JSON.stringify(userPrompt) });
 
-  onLog('info', `Calling LLM model "${adapter.name || modelId}"...`);
+  onLog('info', `正在调用 ${adapter.name || modelId}...`);
 
   const result = await adapter.chat(messages, {
     temperature: node.data?.temperature ?? 0.7,
@@ -340,9 +370,9 @@ async function executeCodeNode(node, inputData, onLog, timeout) {
  * @param {function} onLog
  * @returns {Promise<{filePath:string, format:string, fileName:string, size:number}>}
  */
-async function executeFileOutputNode(node, inputData, onLog, options = {}) {
+async function executeFileOutputNode(node, inputData, onLog) {
   const format = node.data?.config?.format || node.data?.format || 'json';
-  const outputDir = node.data?.config?.outputDir || node.data?.outputDir || options.outputDir || path.resolve(process.cwd(), 'output');
+  const outputDir = node.data?.config?.outputDir || node.data?.outputDir || path.resolve(process.cwd(), 'output');
   const rawName = node.data?.config?.fileName || node.data?.fileName || '';
   let baseName = rawName
     ? rawName.replace(/[/\\:*?"<>|]/g, '_').replace(/\.\./g, '_').replace(/[\x00-\x1F]/g, '')

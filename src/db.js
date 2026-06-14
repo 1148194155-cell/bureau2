@@ -158,6 +158,22 @@ export function initDatabase() {
     console.log('[DB] Created default user (id=1)');
   }
 
+  // 迁移系统
+  db.exec(`CREATE TABLE IF NOT EXISTS schema_version (version INTEGER NOT NULL DEFAULT 0)`);
+  const currentVersion = db.prepare('SELECT MAX(version) AS v FROM schema_version').get()?.v || 0;
+
+  const migrations = [
+    // version 1: initial schema (already created above)
+  ];
+
+  for (const m of migrations) {
+    if (m.version > currentVersion) {
+      db.exec(m.sql);
+      db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(m.version);
+      console.log(`[DB] Migration v${m.version} applied`);
+    }
+  }
+
   console.log(`[DB] Initialized at ${DB_PATH}`);
   return db;
 }

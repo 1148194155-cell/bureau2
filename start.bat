@@ -11,15 +11,35 @@ cd /d "%~dp0"
 set PATH=%~dp0node_portable;%PATH%
 
 if not exist "node_modules" (
-    echo [1/3] Installing backend dependencies...
-    call npm install --no-fund --no-audit 2>nul
+    echo [1/3] Installing backend dependencies... (may take 2-3 minutes)
+    call npm install --no-fund --no-audit
+    if errorlevel 1 (
+        echo.
+        echo ============================================
+        echo   ERROR: Backend dependencies install failed
+        echo   Check your network and try again
+        echo   If you are in China, try: npm config set registry https://registry.npmmirror.com
+        echo ============================================
+        pause
+        exit /b 1
+    )
     echo.
 )
 
 if not exist "renderer\node_modules" (
-    echo [2/3] Installing frontend dependencies...
+    echo [2/3] Installing frontend dependencies... (may take 2-3 minutes)
     cd renderer
-    call npm install --no-fund --no-audit 2>nul
+    call npm install --no-fund --no-audit
+    if errorlevel 1 (
+        echo.
+        echo ============================================
+        echo   ERROR: Frontend dependencies install failed
+        echo   Check your network and try again
+        echo   If you are in China, try: npm config set registry https://registry.npmmirror.com
+        echo ============================================
+        pause
+        exit /b 1
+    )
     cd ..
     echo.
 )
@@ -34,6 +54,22 @@ echo.
 start "Local Canvas - Backend" cmd /c "cd /d %~dp0 && title Backend && node src/index.js"
 start "Local Canvas - Frontend" cmd /c "cd /d %~dp0\renderer && title Frontend && ..\node_portable\npx.cmd vite"
 
+echo 正在等待后端就绪...
+:wait_backend
+powershell -Command "try { (Invoke-WebRequest -Uri http://localhost:3001/api/health -TimeoutSec 2).StatusCode } catch { exit 1 }" >nul 2>&1
+if %errorlevel% neq 0 (
+    timeout /t 1 /nobreak >nul
+    goto wait_backend
+)
 start http://localhost:5173
-echo All set! Browser should open shortly.
+echo 浏览器已打开。
+
+timeout /t 5 /nobreak >nul
+echo.
+echo ============================================
+echo   If browser did not open:
+echo   1. Open http://localhost:5173 manually
+echo   2. If it failed, check console windows
+echo ============================================
+pause
 exit

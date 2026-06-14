@@ -28,3 +28,7 @@ local-canvas/scripts/models/
 local-canvas/scripts/renderer/node_modules/
 
 local-canvas/scripts/node_modules/
+
+test_screenshots/
+_check_db*.py
+_tmp_check*.py

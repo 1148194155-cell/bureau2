@@ -14,6 +14,10 @@ import fs from 'fs-extra';
 
 const router = Router();
 
+// Scanner state tracking
+let scannerStatus = 'idle';
+let scannerLastScan = null; // ISO timestamp
+
 const asyncHandler = (fn) => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(next);
 
@@ -24,8 +28,25 @@ const asyncHandler = (fn) => (req, res, next) =>
  * In production, replace with JWT/session-based auth.
  */
 function getUserId(req) {
-  return parseInt(req.headers['x-user-id'], 10) || 1;
+  const raw = req.headers['x-user-id'];
+  return raw ? parseInt(raw, 10) || 1 : 1;
 }
+
+function requireAuth(req, res, next) {
+  const enableAuth = process.env.LC_ENABLE_AUTH === '1';
+  if (!enableAuth) return next();
+
+  const token = req.headers['x-auth-token'] || req.query.token;
+  const expected = process.env.LC_AUTH_TOKEN;
+  if (!expected) return next();
+
+  if (token !== expected) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  next();
+}
+
+router.use('/workflows', requireAuth);
 
 // Skill Routes
 
@@ -34,26 +55,7 @@ function getUserId(req) {
  */
 router.get('/skills', asyncHandler(async (req, res) => {
   const db = getDb();
-  const skills = await scanSkills();
-
-  // Merge auto-discovered skills from the database
-  const discovered = db.prepare(
-    'SELECT name, description, skill_path, version FROM discovered_skills'
-  ).all();
-
-  for (const ds of discovered) {
-    skills.push({
-      id: `discovered:${ds.skill_path}`,
-      name: ds.name,
-      description: ds.description || '',
-      version: ds.version || '1.0.0',
-      input_schema: {},
-      output_schema: {},
-      source: 'discovered',
-      path: ds.skill_path,
-    });
-  }
-
+  const skills = await buildSkillsList(db);
   res.json({ success: true, data: skills });
 }));
 
@@ -76,13 +78,16 @@ router.get('/models', asyncHandler(async (req, res) => {
     m.source === 'user' || !userModelNames.has(m.name)
   );
 
-  // Ping each model to check status (non-blocking, best-effort)
+  // Ping each model to check status (non-blocking, best-effort, 3s timeout each)
   const modelsWithStatus = await Promise.all(
     deduped.map(async (m) => {
       let online = false;
       try {
         const adapter = createAdapter(m);
-        online = await adapter.ping();
+        online = await Promise.race([
+          adapter.ping(),
+          new Promise((_, reject) => setTimeout(() => reject(new Error('ping timeout')), 3000)),
+        ]);
       } catch {
         // offline
       }
@@ -92,7 +97,7 @@ router.get('/models', asyncHandler(async (req, res) => {
 
   // Strip apiKey from config before returning to frontend
   const safeModels = modelsWithStatus.map(m => {
-    const config = typeof m.config === 'string' ? JSON.parse(m.config) : { ...m.config };
+    const config = m.config ? (typeof m.config === 'string' ? JSON.parse(m.config) : { ...m.config }) : {};
     delete config.apiKey;
     return { ...m, config };
   });
@@ -123,6 +128,7 @@ router.post('/models', asyncHandler(async (req, res) => {
     }
     storedConfig = JSON.stringify(safeConfig);
   } catch {
+    console.warn(`[API] Failed to encrypt API key for model "${name}" — storing as-is`);
     storedConfig = JSON.stringify(safeConfig);
   }
 
@@ -211,7 +217,7 @@ router.delete('/apis/:id', asyncHandler(async (req, res) => {
 router.get('/knowledge', asyncHandler(async (req, res) => {
   const db = getDb();
   const userId = getUserId(req);
-  const bases = db.prepare('SELECT * FROM knowledge_bases WHERE user_id = ?').all(userId);
+  const bases = db.prepare('SELECT id, user_id, name, folder_path, last_indexed, created_at FROM knowledge_bases WHERE user_id = ?').all(userId);
   res.json({ success: true, data: bases });
 }));
 
@@ -286,6 +292,33 @@ router.delete('/knowledge/:id', asyncHandler(async (req, res) => {
     return res.status(404).json({ success: false, error: 'Knowledge base not found' });
   }
   res.json({ success: true });
+}));
+
+// Alias: /api/knowledge-bases → /api/knowledge (for compatibility)
+router.get('/knowledge-bases', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const userId = getUserId(req);
+  const bases = db.prepare('SELECT id, user_id, name, folder_path, last_indexed, created_at FROM knowledge_bases WHERE user_id = ?').all(userId);
+  res.json({ success: true, data: bases });
+}));
+
+router.post('/knowledge-bases', asyncHandler(async (req, res) => {
+  const db = getDb();
+  const userId = getUserId(req);
+  const { name, folder_path } = req.body;
+
+  if (!name || !folder_path) {
+    return res.status(400).json({ success: false, error: 'name and folder_path are required' });
+  }
+
+  const result = db.prepare(
+    'INSERT INTO knowledge_bases (user_id, name, folder_path) VALUES (?, ?, ?)'
+  ).run(userId, name, folder_path);
+
+  res.json({
+    success: true,
+    data: { id: result.lastInsertRowid, name, folder_path },
+  });
 }));
 
 // Workflow Routes
@@ -461,40 +494,23 @@ router.post('/workflows/run', asyncHandler(async (req, res) => {
   logExecution(db, wsManager, executionId, 'review', reviewJson);
 
   // Execute asynchronously (non-blocking)
-  executeWorkflowAsync(executionId, workflowDef, userId, db, options || {});
+  executeWorkflowAsync(executionId, workflowDef, userId, db, skillsList, options || {}).catch(err => {
+    console.error('[API] Unhandled execution error:', err.message);
+  });
 }));
 
 /**
  * Execute a workflow asynchronously, updating DB and WebSocket as it goes.
  */
-async function executeWorkflowAsync(executionId, workflowDef, userId, db, options) {
+async function executeWorkflowAsync(executionId, workflowDef, userId, db, skillsList, options) {
   const log = (level, message) => {
     logExecution(db, wsManager, executionId, level, message);
   };
 
   try {
     // Build skills map
-    const skills = await scanSkills();
-
-    // Merge DB-discovered SKILL.md skills (same as GET /api/skills)
-    const discovered = db.prepare(
-      'SELECT name, description, skill_path, version FROM discovered_skills'
-    ).all();
-    for (const ds of discovered) {
-      skills.push({
-        id: `discovered:${ds.skill_path}`,
-        name: ds.name,
-        description: ds.description || '',
-        version: ds.version || '1.0.0',
-        input_schema: {},
-        output_schema: {},
-        source: 'discovered',
-        path: ds.skill_path,
-      });
-    }
-
     const skillsMap = {};
-    for (const skill of skills) {
+    for (const skill of skillsList) {
       if (skill.id) skillsMap[skill.id] = skill;
     }
 
@@ -569,15 +585,15 @@ async function buildSkillsList(db) {
     'SELECT name, description, skill_path, version FROM discovered_skills'
   ).all();
   for (const ds of discovered) {
+    // 跳过已在 scanSkills 结果中的同名技能
+    if (skills.some(s => s.id === ds.name)) continue;
     skills.push({
       id: `discovered:${ds.skill_path}`,
       name: ds.name,
       description: ds.description || '',
-      version: ds.version || '1.0.0',
-      input_schema: {},
-      output_schema: {},
-      source: 'discovered',
       path: ds.skill_path,
+      entry: null,
+      type: 'discovered',
     });
   }
   return skills;
@@ -715,7 +731,7 @@ router.post('/ai/chat', asyncHandler(async (req, res) => {
   }
 
   // Find the model to use
-  const modelId = model_id || 1;
+  const modelId = model_id || 'builtin';
   let model;
   let timeoutMs = 60000;  // default 60s
 
@@ -729,7 +745,7 @@ router.post('/ai/chat', asyncHandler(async (req, res) => {
       });
     }
     model = { id: 'builtin', name: '内置模型 (本地)', adapter_type: 'builtin', config: {} };
-    timeoutMs = 120000;  // builtin 2GB GGUF needs longer first-load time
+    timeoutMs = 180000;  // builtin: 2GB GGUF first-load 30-40s + inference 10-30s, 3min total
   } else {
     model = db.prepare('SELECT * FROM models WHERE id = ? AND user_id = ?').get(modelId, userId);
     if (!model) {
@@ -739,26 +755,45 @@ router.post('/ai/chat', asyncHandler(async (req, res) => {
 
   const adapter = createAdapter(model);
 
-  // Add timeout control
-  const result = await Promise.race([
-    handleChatMessage({
-      message,
-      history: history || [],
-      canvasState: canvas_state || { nodes: [], edges: [] },
-      adapter,
-      userId,
-      db,
-      lang: req.body.lang || 'zh',
-    }),
-    new Promise((_, reject) =>
-      setTimeout(() => reject(new Error(`AI request timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs)
-    ),
-  ]);
+  let result;
+  try {
+    result = await Promise.race([
+      handleChatMessage({
+        message,
+        history: history || [],
+        canvasState: canvas_state || { nodes: [], edges: [] },
+        adapter,
+        userId,
+        db,
+        lang: req.body.lang || 'zh',
+      }),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error(`AI request timed out after ${Math.round(timeoutMs / 1000)}s`)), timeoutMs)
+      ),
+    ]);
+  } catch (err) {
+    const errMsg = err.message || String(err);
+    // Translate common error messages for Chinese users
+    if (errMsg.includes('out of memory') || errMsg.includes('OOM')) {
+      return res.status(500).json({ success: false, error: '模型加载内存不足，请关闭其他应用或使用更小的模型' });
+    }
+    if (errMsg.includes('unsupported') || errMsg.includes('architecture')) {
+      return res.status(500).json({ success: false, error: '模型格式不支持，请下载 Qwen2.5-3B-Instruct-Q4_K_M.gguf 格式的模型文件' });
+    }
+    if (errMsg.includes('not found') || errMsg.includes('ENOENT')) {
+      return res.status(500).json({ success: false, error: '模型文件缺失或损坏，请确认 models/builtin.gguf 存在' });
+    }
+    if (errMsg.includes('timed out')) {
+      return res.status(504).json({ success: false, error: `模型响应超时(${Math.round(timeoutMs / 1000)}s)，请检查模型是否正常运行` });
+    }
+    if (errMsg.includes('Failed to create adapter') || errMsg.includes('Unknown adapter')) {
+      return res.status(500).json({ success: false, error: '模型适配器初始化失败，请检查模型配置' });
+    }
+    return res.status(500).json({ success: false, error: `模型运行时错误: ${errMsg}` });
+  }
 
   res.json({ success: true, data: result });
 }));
-
-// Health Check
 
 // Built-in Model Status
 
@@ -769,6 +804,8 @@ router.get('/builtin/status', (req, res) => {
     try {
       const stat = fs.statSync(DEFAULT_MODEL_PATH);
       info.fileSize = stat.size;
+      // If the model file is large enough to be valid (>100MB), mark as potentially loadable
+      info.ready = stat.size > 100 * 1024 * 1024;
     } catch {}
   }
   res.json({ success: true, data: info });
@@ -779,5 +816,36 @@ router.get('/builtin/status', (req, res) => {
 router.get('/health', (req, res) => {
   res.json({ status: 'ok', timestamp: new Date().toISOString() });
 });
+
+// Scanner Routes
+
+/**
+ * GET /api/scanner/status — get scanner status
+ */
+router.get('/scanner/status', (req, res) => {
+  res.json({ success: true, data: { status: scannerStatus, lastScan: scannerLastScan } });
+});
+
+/**
+ * POST /api/scanner/rescan — trigger a rescan of skills/models/apis
+ */
+router.post('/scanner/rescan', asyncHandler(async (req, res) => {
+  const db = getDb();
+  if (scannerStatus === 'scanning') {
+    return res.status(409).json({ success: false, error: 'Scanner is already running' });
+  }
+  scannerStatus = 'scanning';
+  const { autoDiscover } = await import('../scanner/autoDiscover.js');
+  try {
+    await autoDiscover(db);
+    scannerStatus = 'idle';
+    scannerLastScan = new Date().toISOString();
+    res.json({ success: true, data: { status: 'idle', lastScan: scannerLastScan } });
+  } catch (err) {
+    scannerStatus = 'error';
+    scannerLastScan = new Date().toISOString();
+    res.status(500).json({ success: false, error: err.message });
+  }
+}));
 
 export default router;

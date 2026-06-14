@@ -1,11 +1,17 @@
 import { useState, useEffect, useRef } from "react";
-import { Trash2, X, FlaskConical, Globe, Send, FileOutput } from "lucide-react";
+import { Trash2, X, FlaskConical, Globe, Send, FileOutput, Brain, Pencil, GitFork, Code } from "lucide-react";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
 import { useI18n } from "../i18n";
 
-const TYPE_ICONS = { skill: FlaskConical, knowledge: Globe, output: Send, file_output: FileOutput };
-const TYPE_COLORS = { skill: "emerald", knowledge: "purple", output: "amber", file_output: "teal" };
+const TYPE_ICONS = {
+  skill: FlaskConical, knowledge: Globe, output: Send, file_output: FileOutput,
+  model: Brain, input: Pencil, condition: GitFork, code: Code, api_caller: Globe,
+};
+const TYPE_COLORS = {
+  skill: "emerald", knowledge: "purple", output: "amber", file_output: "teal",
+  model: "rose", input: "blue", condition: "orange", code: "purple", api_caller: "cyan",
+};
 
 export default function NodeConfigPopover() {
   const { t } = useI18n();
@@ -141,12 +147,122 @@ export default function NodeConfigPopover() {
           </>
         )}
 
+        {/* ★ model 节点：模型绑定 + system prompt + temperature + max_tokens */}
+        {node.type === "model" && (
+          <>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">{t('nodeConfig.model')}</label>
+              <select value={config.model_id || nodeData.config?.model_id || ""}
+                onChange={(e) => setConfig({ ...config, model_id: e.target.value })}
+                className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs outline-none">
+                <option value="">{t('nodeConfig.none')}</option>
+                {models.map((m) => (<option key={m.id} value={m.id}>{m.name}</option>))}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">System Prompt</label>
+              <textarea value={config.systemPrompt || nodeData.config?.systemPrompt || ""}
+                onChange={(e) => setConfig({ ...config, systemPrompt: e.target.value })}
+                rows={2} placeholder="你是一个专业的翻译助手..."
+                className="w-full px-2 py-1.5 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-[10px] placeholder-surface-600 font-mono resize-none outline-none" />
+            </div>
+            <div className="grid grid-cols-2 gap-2">
+              <div>
+                <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">Temperature</label>
+                <input type="number" step="0.1" min="0" max="2"
+                  value={config.temperature ?? nodeData.config?.temperature ?? 0.7}
+                  onChange={(e) => setConfig({ ...config, temperature: parseFloat(e.target.value) })}
+                  className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs outline-none" />
+              </div>
+              <div>
+                <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">Max Tokens</label>
+                <input type="number" min="1" max="128000"
+                  value={config.max_tokens ?? nodeData.config?.max_tokens ?? 2048}
+                  onChange={(e) => setConfig({ ...config, max_tokens: parseInt(e.target.value) })}
+                  className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs outline-none" />
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ★ input 节点：默认值 */}
+        {node.type === "input" && (
+          <div>
+            <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">默认值</label>
+            <textarea value={config.input || nodeData.config?.input || ""}
+              onChange={(e) => setConfig({ ...config, input: e.target.value })}
+              rows={2} placeholder="输入你想翻译的中文..."
+              className="w-full px-2 py-1.5 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-[10px] placeholder-surface-600 font-mono resize-none outline-none" />
+            <p className="text-[9px] text-surface-600 mt-0.5">运行工作流时会作为初始数据传递给下游节点</p>
+          </div>
+        )}
+
+        {/* ★ condition 节点：表达式 */}
+        {node.type === "condition" && (
+          <div>
+            <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">条件表达式</label>
+            <input value={config.expression || nodeData.config?.expression || ""}
+              onChange={(e) => setConfig({ ...config, expression: e.target.value })}
+              placeholder='input.score > 0.5'
+              className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 font-mono outline-none" />
+            <p className="text-[9px] text-surface-600 mt-0.5">JavaScript 表达式，input 是上游数据。返回 true 放行，false 阻断。</p>
+          </div>
+        )}
+
+        {/* ★ code 节点：代码编辑器 + 超时 */}
+        {node.type === "code" && (
+          <>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">JavaScript 代码</label>
+              <textarea value={config.code || nodeData.config?.code || ""}
+                onChange={(e) => setConfig({ ...config, code: e.target.value })}
+                rows={5} placeholder={`// input 是上游数据\nconst result = input.text.toUpperCase();\nresult;`}
+                className="w-full px-2 py-1.5 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-[10px] placeholder-surface-600 font-mono resize-none outline-none" />
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">超时 (ms)</label>
+              <input type="number" min="100" max="30000"
+                value={config.timeout ?? nodeData.config?.timeout ?? 5000}
+                onChange={(e) => setConfig({ ...config, timeout: parseInt(e.target.value) })}
+                className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs outline-none" />
+            </div>
+          </>
+        )}
+
+        {/* ★ api_caller 节点：URL + Method + Headers + Body */}
+        {node.type === "api_caller" && (
+          <>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">URL</label>
+              <input value={config.url || nodeData.config?.url || ""}
+                onChange={(e) => setConfig({ ...config, url: e.target.value })}
+                placeholder="https://api.example.com/data"
+                className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 font-mono outline-none" />
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">Method</label>
+              <select value={config.method || nodeData.config?.method || "GET"}
+                onChange={(e) => setConfig({ ...config, method: e.target.value })}
+                className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs outline-none">
+                {['GET','POST','PUT','DELETE','PATCH'].map(m => <option key={m} value={m}>{m}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">Headers (JSON)</label>
+              <textarea value={config.headers ? JSON.stringify(config.headers, null, 2) : ""}
+                onChange={(e) => { try { const v = JSON.parse(e.target.value); setConfig({ ...config, headers: v }); } catch {} }}
+                rows={2} placeholder='{"Authorization": "Bearer xxx"}'
+                className="w-full px-2 py-1.5 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-[10px] placeholder-surface-600 font-mono resize-none outline-none" />
+            </div>
+          </>
+        )}
+
         <div>
           <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">{t('nodeConfig.params')}</label>
           <textarea
             value={config.params ? JSON.stringify(config.params, null, 2) : nodeData.config?.params ? JSON.stringify(nodeData.config.params, null, 2) : ""}
             onChange={(e) => { try { const v = e.target.value.trim(); setConfig({ ...config, params: v ? JSON.parse(v) : undefined }); } catch {} }}
-            rows={4} placeholder='{"temperature": 0.7}'
+            rows={4} placeholder={`{"prompt": "把以下内容翻译成英文: {{input}}", "temperature": 0.7}`}
             className="w-full px-2 py-1.5 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-[10px] placeholder-surface-600 font-mono resize-none outline-none" />
         </div>
 

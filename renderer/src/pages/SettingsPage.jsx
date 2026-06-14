@@ -49,14 +49,14 @@ export default function SettingsPage() {
 
       {/* Global output directory config */}
       <div className="px-5 py-3 border-b border-surface-700/40 flex items-center gap-3">
-        <span className="text-[10px] font-medium text-surface-400 uppercase tracking-wide">输出目录</span>
+        <span className="text-[10px] font-medium text-surface-400 uppercase tracking-wide">{t('settings.outputDir')}</span>
         <input
           value={outputDir || ''}
           onChange={(e) => setOutputDir(e.target.value)}
-          placeholder="默认: ~/localcanvas-output/"
+          placeholder={t('settings.outputDirPlaceholder')}
           className="flex-1 h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 outline-none focus:border-accent-500/40"
         />
-        <span className="text-[10px] text-surface-500">FileOutput 节点的默认输出路径</span>
+        <span className="text-[10px] text-surface-500">{t('settings.outputDirHint')}</span>
       </div>
 
       <div className="flex-1 overflow-hidden flex">
@@ -82,6 +82,13 @@ function SettingsPanel({ type, onClose, onDone }) {
   const [saving, setSaving] = useState(false);
 
   const handleSave = async () => {
+    // Key 校验
+    if (type === "addModel") {
+      const needsKey = form.adapter_type === 'openai' || form.adapter_type === 'anthropic';
+      if (needsKey && !form.apiKey.trim()) {
+        if (!confirm(t('settings.confirmNoKey') || '未填写 API Key，模型可能无法连接。确定保存？')) return;
+      }
+    }
     setSaving(true);
     try {
       if (type === "addModel") await createModel({ name: form.name, adapter_type: form.adapter_type, config: { endpoint: form.endpoint, apiKey: form.apiKey, model: form.model } });
@@ -107,10 +114,28 @@ function SettingsPanel({ type, onClose, onDone }) {
       <div className="flex-1 overflow-y-auto p-4 space-y-4 text-xs">
         {type === "addModel" && <>
           <F label={t('settings.name')}><input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} placeholder="GPT-4o" className={inputCls} /></F>
-          <F label={t('settings.adapter')}><select value={form.adapter_type} onChange={(e) => setForm({ ...form, adapter_type: e.target.value })} className={inputCls}><option value="openai">OpenAI</option><option value="ollama">Ollama</option><option value="anthropic">Anthropic</option><option value="llamacpp">llama.cpp</option></select></F>
+          <F label={t('settings.adapter')}><select value={form.adapter_type} onChange={e => {
+    const type = e.target.value;
+    // 选择适配器时自动填 endpoint 和 model 的推荐值
+    const presets = {
+      openai: { endpoint: "https://api.openai.com/v1", model: "gpt-4o" },
+      ollama: { endpoint: "http://localhost:11434/v1", model: "qwen2.5:7b" },
+      anthropic: { endpoint: "https://api.anthropic.com/v1", model: "claude-sonnet-4-20250514" },
+    };
+    const preset = presets[type] || {};
+    setForm({ ...form, adapter_type: type, endpoint: preset.endpoint || form.endpoint, model: preset.model || form.model });
+  }}
+  className={inputCls}><option value="openai">OpenAI (ChatGPT / GPT-4o) — 需要 API Key</option><option value="ollama">Ollama (本地模型，免费) — 需先安装 Ollama</option><option value="anthropic">Anthropic (Claude) — 需要 API Key</option><option value="llamacpp">llama.cpp</option></select></F>
           <F label={t('settings.endpoint')}><input value={form.endpoint} onChange={(e) => setForm({ ...form, endpoint: e.target.value })} placeholder="https://api.openai.com/v1" className={inputCls} /></F>
           <F label={t('settings.modelId')}><input value={form.model} onChange={(e) => setForm({ ...form, model: e.target.value })} placeholder="gpt-4o" className={inputCls} /></F>
           <F label={t('settings.key')}><input type="password" value={form.apiKey} onChange={(e) => setForm({ ...form, apiKey: e.target.value })} placeholder="sk-..." className={inputCls} /></F>
+          <p className="text-[9px] text-surface-600 mt-0.5">
+            {form.adapter_type === "openai" && "从 platform.openai.com/api-keys 获取，以 sk- 开头"}
+            {form.adapter_type === "anthropic" && "从 console.anthropic.com 获取，以 sk-ant- 开头"}
+            {form.adapter_type === "ollama" && "Ollama 本地模型无需 Key，留空即可"}
+          <br />
+          Key 会被 AES-256 加密存储。也可在「API Key」标签页统一管理所有 Key。
+          </p>
         </>}
 
         {type === "addKey" && <>
@@ -145,7 +170,7 @@ function ModelList({ models, onAdd, onDelete }) {
           {m.source === "builtin" ? <div className="w-8 h-8 rounded-xl bg-accent-500/10 flex items-center justify-center"><span className="text-base">🪄</span></div> : <div className="w-8 h-8 rounded-xl bg-accent-500/10 flex items-center justify-center"><Globe size={14} className="text-accent-400" /></div>}
           <div className="flex-1 min-w-0"><div className="text-xs font-medium text-surface-200">{m.name}</div><div className="text-[10px] text-surface-500 mt-0.5">{m.adapter_type}{m.config?.model ? " \u00b7 " + m.config.model : ""}</div></div>
           <div className="flex items-center gap-2">
-            {m.online ? <span className="text-[10px] text-emerald-400 flex items-center gap-0.5"><CheckCircle2 size={10} />{t('settings.online')}</span> : <span className="text-[10px] text-surface-500 flex items-center gap-0.5"><XCircle size={10} />{t('settings.offline')}</span>}
+            {m.online ? <span className="text-[10px] text-emerald-400 flex items-center gap-0.5"><CheckCircle2 size={10} />{t('settings.online')}</span> : <span className="text-[9px] px-1.5 py-0.5 rounded-md bg-amber-500/10 text-amber-400 flex items-center gap-1" title="暂无响应 — 检查 API 端点是否正确、模型是否在线"><XCircle size={10} /> 未连接</span>}
             {m.source === "builtin" ? null : <button onClick={() => onDelete(m.id)} className="w-6 h-6 flex items-center justify-center rounded-md text-surface-600 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>}
           </div>
         </div>
@@ -166,7 +191,9 @@ function KeyList({ apiKeys, onAdd, onDelete }) {
       {apiKeys.map((k) => (
         <div key={k.id} className="flex items-center gap-3 px-3 py-2.5 bg-surface-850 border border-surface-700/40 rounded-2xl hover:border-surface-600/50 transition-colors group">
           <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center"><Key size={14} className="text-amber-400" /></div>
-          <div className="flex-1"><div className="text-xs font-medium text-surface-200">{k.name}</div><div className="text-[10px] text-surface-500 mt-0.5">{k.key_ref}</div></div>
+          <div className="flex-1"><div className="text-xs font-medium text-surface-200">{k.name}</div><div className="text-[10px] text-surface-500 mt-0.5">
+            {k.created_at ? new Date(k.created_at).toLocaleDateString() : t('settings.saved')}
+          </div></div>
           <button onClick={() => onDelete(k.id)} className="w-6 h-6 flex items-center justify-center rounded-md text-surface-600 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
         </div>
       ))}

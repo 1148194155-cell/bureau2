@@ -6,13 +6,22 @@ import { useI18n } from "./i18n";
 import useStore from "./store/store";
 
 export default function App() {
-  const [page, setPage] = useState("canvas");
+  // 从 URL hash 初始化页面状态
+  const [page, setPage] = useState(() => {
+    return window.location.hash === '#settings' ? 'settings' : 'canvas';
+  });
   const { t, lang, setLang } = useI18n();
   const navigateTo = useStore(s => s.navigateToPage);
   const setNavigateTo = useStore(s => s.setNavigateToPage);
 
+  // 页面切换时同步 hash
+  const navigateToPage = (p) => {
+    setPage(p);
+    window.location.hash = p === 'settings' ? '#settings' : '';
+  };
+
   useEffect(() => {
-    if (navigateTo) { setPage(navigateTo); setNavigateTo(null); }
+    if (navigateTo) { navigateToPage(navigateTo); setNavigateTo(null); }
   }, [navigateTo]);
 
   return (
@@ -28,7 +37,7 @@ export default function App() {
 
         <div className="flex items-center gap-0.5">
           <button
-            onClick={() => setPage("canvas")}
+            onClick={() => navigateToPage("canvas")}
             className={"h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all " + (
               page === "canvas" ? "bg-accent-500/10 text-accent-300" : "text-surface-400 hover:text-surface-200 hover:bg-surface-700/40"
             )}
@@ -36,7 +45,7 @@ export default function App() {
             <Layers size={13} />{t('nav.canvas')}
           </button>
           <button
-            onClick={() => setPage("settings")}
+            onClick={() => navigateToPage("settings")}
             className={"h-7 px-3 rounded-lg text-[11px] font-medium flex items-center gap-1.5 transition-all " + (
               page === "settings" ? "bg-accent-500/10 text-accent-300" : "text-surface-400 hover:text-surface-200 hover:bg-surface-700/40"
             )}

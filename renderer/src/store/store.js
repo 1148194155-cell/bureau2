@@ -27,6 +27,7 @@ const useStore = create((set, get) => ({
         position: position || { x: 300 + Math.random() * 200, y: 200 + Math.random() * 200 },
         data: { ...data, label: data?.label || type, nodeId: id },
       }],
+      isDirty: true,
     });
     return id;
   },
@@ -34,13 +35,14 @@ const useStore = create((set, get) => ({
   removeNode: (id) => set({
     nodes: get().nodes.filter((n) => n.id !== id),
     edges: get().edges.filter((e) => e.source !== id && e.target !== id),
+    isDirty: true,
   }),
 
   updateNodeData: (id, data) => set({
     nodes: get().nodes.map((n) => n.id === id ? { ...n, data: { ...n.data, ...data } } : n),
   }),
 
-  clearCanvas: () => set({ nodes: [], edges: [] }),
+  clearCanvas: () => set({ nodes: [], edges: [], isDirty: false }),
 
   // --- Undo/Redo ---
   undoStack: [], redoStack: [],
@@ -112,6 +114,10 @@ const useStore = create((set, get) => ({
   // --- Page navigation (from AI chat) ---
   navigateToPage: null,
   setNavigateToPage: (p) => set({ navigateToPage: p }),
+
+  // --- Dirty tracking ---
+  isDirty: false,
+  setDirty: (v) => set({ isDirty: v }),
 
   // --- AI panel width ---
   aiPanelWidth: 400,

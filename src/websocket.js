@@ -133,6 +133,12 @@ class WebSocketManager {
         subscribers.delete(ws);
       }
     }
+    // 发送完后清理所有相关订阅
+    this.subscriptions.delete(executionId);
+    for (const [ws, execIds] of this.clientSubscriptions) {
+      execIds.delete(executionId);
+      if (execIds.size === 0) this.clientSubscriptions.delete(ws);
+    }
   }
 
   /**
@@ -153,6 +159,12 @@ class WebSocketManager {
       } else {
         subscribers.delete(ws);
       }
+    }
+    // 发送完后清理所有相关订阅
+    this.subscriptions.delete(executionId);
+    for (const [ws, execIds] of this.clientSubscriptions) {
+      execIds.delete(executionId);
+      if (execIds.size === 0) this.clientSubscriptions.delete(ws);
     }
   }
 }
@@ -187,9 +199,19 @@ function sendExistingLogs(ws, execId) {
         },
       }));
     }
-  } catch {
-    // DB might not be ready — skip history
-    console.warn('[WS] Failed to send existing logs for', execId);
+  } catch (err) {
+    // DB might not be ready — skip history, notify client
+    console.warn('[WS] Failed to send existing logs for', execId, '—', err.message);
+    try {
+      ws.send(JSON.stringify({
+        type: 'log',
+        data: {
+          level: 'warn',
+          message: '历史日志暂时不可用，新日志会实时推送',
+          timestamp: new Date().toISOString(),
+        },
+      }));
+    } catch { /* client may have disconnected */ }
   }
 }
 

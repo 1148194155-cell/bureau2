@@ -2,7 +2,7 @@ import { spawn } from 'node:child_process';
 import vm from 'node:vm';
 import path from 'node:path';
 import fs from 'fs-extra';
-import { v4 as uuidv4 } from 'uuid';
+import { getDb } from '../db.js';
 
 /**
  * Workflow Execution Engine
@@ -42,13 +42,12 @@ export async function executeWorkflow({
   // 1. Topological sort
   const sorted = topologicalSort(nodes, edges);
   if (!sorted) {
-    throw new Error('Workflow contains a cycle 鈥?cannot execute');
+    throw new Error('Workflow contains a cycle — cannot execute');
   }
 
   onLog('info', `Workflow execution started with ${sorted.length} nodes in order`);
 
   // Build adjacency data: which edges feed into which node
-  const nodeOutputs = {};
   const results = [];
 
   // 2. Execute in topological order (parallel for independent nodes)
@@ -103,10 +102,11 @@ export async function executeWorkflow({
             timeout,
             retryCount,
             retryDelay,
+            outputDir: options.outputDir,
           });
 
           outputs[node.id] = result;
-          onLog('debug', `Node ${node.id} output type: ${typeof result}, isEmpty: ${JSON.stringify(result) === '{}' ? 'YES' : 'NO'}`);
+          onLog('debug', `Node ${node.id} output type: ${typeof result}, isEmpty: ${result && typeof result === 'object' && Object.keys(result).length === 0 ? 'YES' : 'NO'}`);
           results.push({ nodeId: node.id, nodeName: node.data?.label || node.type, success: true, output: result });
           onLog('info', `Node "${node.data?.label || node.id}" completed successfully`);
 
@@ -122,12 +122,12 @@ export async function executeWorkflow({
         } catch (err) {
           results.push({ nodeId: node.id, nodeName: node.data?.label || node.type, success: false, error: err.message });
           onLog('error', `Node "${node.data?.label || node.id}" failed: ${err.message}`);
-          throw err; // fail the workflow
+          outputs[node.id] = null;
+          return null;
         }
       })
     );
 
-    if (batchResults.some(r => r === undefined)) break; // error occurred
   }
 
   // 3. Collect all node outputs structured
@@ -147,8 +147,9 @@ export async function executeWorkflow({
 
   onLog('info', 'Workflow execution completed');
 
+  const allPassed = results.every(r => r.success);
   return {
-    success: true,
+    success: allPassed,
     results,
     outputFiles,
   };
@@ -157,7 +158,7 @@ export async function executeWorkflow({
 /**
  * Execute a single node.
  */
-async function executeNode(node, inputData, { skills, adapters, onLog, timeout, retryCount, retryDelay }) {
+async function executeNode(node, inputData, { skills, adapters, onLog, timeout, retryCount, retryDelay, outputDir }) {
   const nodeType = node.type || node.data?.type;
 
   if (nodeType === 'skill') {
@@ -168,12 +169,42 @@ async function executeNode(node, inputData, { skills, adapters, onLog, timeout, 
     return node.data?.input || inputData || {};
   } else if (nodeType === 'output') {
     return inputData;
+  } else if (nodeType === 'knowledge') {
+    const kbId = node.data?.config?.knowledgeBaseId || node.data?.kb_id;
+    const query = inputData?.query || inputData?.input || JSON.stringify(inputData);
+    if (!kbId) throw new Error('Knowledge node missing knowledgeBaseId');
+    const db = getDb();
+    const chunks = db.prepare(
+      'SELECT content, file_path FROM knowledge_chunks WHERE knowledge_base_id = ? LIMIT 10'
+    ).all(kbId);
+    return { query, results: chunks.map(c => ({ content: c.content, source: c.file_path })) };
+  } else if (nodeType === 'condition') {
+    const expr = node.data?.config?.expression || node.data?.expression || '';
+    if (!expr) return { passed: true, value: inputData };
+    const condSandbox = { input: inputData };
+    const condCtx = vm.createContext(condSandbox);
+    const condResult = new vm.Script(`(${expr})`).runInContext(condCtx, { timeout: 2000 });
+    return { passed: !!condResult, value: inputData };
+  } else if (nodeType === 'api') {
+    const url = node.data?.config?.url || node.data?.url;
+    const method = (node.data?.config?.method || node.data?.method || 'GET').toUpperCase();
+    const apiHeaders = node.data?.config?.headers || node.data?.headers || {};
+    const body = node.data?.config?.body || inputData;
+    if (!url) throw new Error('API node missing url');
+    const resp = await fetch(url, {
+      method,
+      headers: { 'Content-Type': 'application/json', ...apiHeaders },
+      body: method !== 'GET' ? JSON.stringify(body) : undefined,
+      signal: AbortSignal.timeout(timeout),
+    });
+    const text = await resp.text();
+    try { return JSON.parse(text); } catch { return { status: resp.status, body: text }; }
   } else if (nodeType === 'code') {
     return executeCodeNode(node, inputData, onLog, timeout);
   } else if (nodeType === 'file_output') {
     return executeFileOutputNode(node, inputData, onLog);
   } else {
-    throw new Error(`Unknown node type "${nodeType}". Supported types: model, llm, ai, skill, api, input, output, code, file_output`);
+    throw new Error(`Unknown node type "${nodeType}". Supported: model, llm, ai, skill, input, output, code, file_output, knowledge, condition, api`);
   }
 }
 
@@ -190,13 +221,18 @@ async function executeSkillNode(node, inputData, skills, adapters, onLog, timeou
 
   // 没有可执行脚本但有描述 → 用 model 执行（SKILL.md 自动发现技能）
   if (!skill.entry || !skill.entryType) {
+    // discovered 类型技能：直接用 SKILL.md 作为 system prompt
+    if (skill.type === 'discovered') {
+      return executeLLMSkill(node, inputData, skill, adapters, onLog, timeout, retryCount, retryDelay);
+    }
+
     let description = skill.description;
 
     // 如果 description 为空，直接从 SKILL.md 文件读取全文作为技能定义
     if (!description && skill.path) {
       try {
         const mdPath = path.join(skill.path, 'SKILL.md');
-        description = fs.readFileSync(mdPath, 'utf8');
+        description = await fs.readFile(mdPath, 'utf8');
         if (description) {
           onLog('info', `Loaded SKILL.md content for "${skill.name}" (${description.length} chars)`);
         }
@@ -258,6 +294,7 @@ async function executeSkillNode(node, inputData, skills, adapters, onLog, timeou
       return typeof result === 'string' ? safeParseJson(result) : result;
     } catch (err) {
       lastError = err;
+      onLog('warn', `Skill "${skillId}" attempt ${attempt + 1} failed: ${err.message}`);
     }
   }
 
@@ -312,11 +349,16 @@ async function executeCodeNode(node, inputData, onLog, timeout) {
   const code = node.data?.code || '';
   if (!code) return inputData || {};
 
-  const sandbox = { input: inputData, onLog, console };
+  const sandboxConsole = {
+    log: (...args) => onLog('info', `[code] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`),
+    error: (...args) => onLog('error', `[code] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`),
+    warn: (...args) => onLog('warn', `[code] ${args.map(a => typeof a === 'object' ? JSON.stringify(a) : String(a)).join(' ')}`),
+  };
+  const sandbox = { input: inputData, onLog, console: sandboxConsole };
   const context = vm.createContext(sandbox);
   const script = new vm.Script(code);
 
-  const result = script.runInContext(context, { timeout: timeout || 5000 });
+  const result = script.runInContext(context, { timeout: timeout || 5000, breakOnSigint: true });
   return result ?? {};
 }
 
@@ -333,10 +375,10 @@ async function executeFileOutputNode(node, inputData, onLog) {
   const outputDir = node.data?.config?.outputDir || node.data?.outputDir || path.resolve(process.cwd(), 'output');
   const rawName = node.data?.config?.fileName || node.data?.fileName || '';
   let baseName = rawName
-    ? rawName.replace(/[/\\:*?"<>|]/g, '_').replace(/\.\./g, '_').replace(/[^\x20-\x7E]/g, '')
+    ? rawName.replace(/[/\\:*?"<>|]/g, '_').replace(/\.\./g, '_').replace(/[\x00-\x1F]/g, '')
     : `output_${Date.now()}`;
   if (rawName && !baseName) baseName = `output_${Date.now()}`;
-  baseName = baseName.replace(/[^\x00-\x7F]/g, '_').replace(/[<>:"/\\|?*]/g, '_');
+  baseName = baseName.replace(/[<>:"/\\|?*]/g, '_');
   const template = node.data?.config?.template || node.data?.template || '';
 
   const actualData = (inputData && typeof inputData === 'object' && 'content' in inputData)
@@ -365,7 +407,11 @@ async function executeFileOutputNode(node, inputData, onLog) {
   if (binaryFormats.includes(format)) {
     let data = actualData?.data || actualData?.base64 || actualData;
     if (typeof data === 'string') data = data.replace(/\s/g, '');
-    await fs.writeFile(filePath, Buffer.from(data, 'base64'));
+    try {
+      await fs.writeFile(filePath, Buffer.from(data, 'base64'));
+    } catch (err) {
+      throw new Error(`Invalid base64 data for format "${format}": ${err.message}`);
+    }
     const stat = await fs.stat(filePath);
     onLog('info', `File written: ${filePath} (${stat.size} bytes, format=${format})`);
     return { filePath, format, fileName: baseName + ext, size: stat.size };
@@ -377,9 +423,19 @@ async function executeFileOutputNode(node, inputData, onLog) {
   } else if (format === 'csv') {
     content = toCsv(actualData);
   } else if (format === 'html') {
-    content = template
-      ? renderTemplate(template, actualData)
-      : wrapHtml(typeof actualData === 'string' ? actualData : JSON.stringify(actualData, null, 2));
+    let htmlContent = typeof actualData === 'string' ? actualData : '';
+    // 先去掉所有非 HTML 前缀（中文介绍、markdown fences 等），直接定位到 <!DOCTYPE 或 <html
+    htmlContent = htmlContent.replace(/^[\s\S]*?(<!DOCTYPE\s+html|<html\b)/i, '$1');
+    // 去掉末尾的 markdown fence 闭合
+    htmlContent = htmlContent.replace(/\n```\s*$/i, '');
+    const isFullHtml = /^\s*(<!DOCTYPE|<html)/i.test(htmlContent);
+    if (isFullHtml) {
+      content = htmlContent;
+    } else {
+      content = template
+        ? renderTemplate(template, actualData)
+        : wrapHtml(typeof actualData === 'string' ? actualData : JSON.stringify(actualData, null, 2));
+    }
   } else if (format === 'md') {
     content = template
       ? renderTemplate(template, actualData)
@@ -505,8 +561,14 @@ function buildNodeInput(node, edges, outputs) {
         input[targetField] = getNestedValue(sourceOutput, sourceField);
       }
     } else {
-      // No mapping: merge the whole output
-      Object.assign(input, typeof sourceOutput === 'object' ? sourceOutput : { value: sourceOutput });
+      // No mapping: merge the whole output, keyed by source node id to prevent overwrite
+      if (typeof sourceOutput === 'object' && sourceOutput !== null) {
+        input[edge.source] = sourceOutput;
+        // Also shallow-merge for backward compatibility
+        Object.assign(input, sourceOutput);
+      } else {
+        input.value = sourceOutput;
+      }
     }
   }
 
@@ -526,16 +588,98 @@ function safeParseJson(str) {
   }
 }
 
+/**
+ * Execute a discovered skill via LLM — reads SKILL.md as system prompt.
+ *
+ * @param {object} node
+ * @param {object} inputData
+ * @param {object} skillConfig - { name, path, type: 'discovered', ... }
+ * @param {object} adapters
+ * @param {function} onLog
+ * @param {number} timeout
+ * @param {number} retryCount
+ * @param {number} retryDelay
+ * @returns {Promise<object>}
+ */
+async function executeLLMSkill(node, inputData, skillConfig, adapters, onLog, timeout, retryCount, retryDelay) {
+  // 1. 读取 SKILL.md 作为 systemPrompt
+  const mdPath = path.join(skillConfig.path, 'SKILL.md');
+  let systemPrompt;
+  try {
+    systemPrompt = fs.readFileSync(mdPath, 'utf8');
+  } catch {
+    throw new Error(`Discovered skill "${skillConfig.name}": SKILL.md not found at ${mdPath}`);
+  }
+  if (!systemPrompt || !systemPrompt.trim()) {
+    throw new Error(`Discovered skill "${skillConfig.name}": SKILL.md is empty`);
+  }
+  onLog('info', `Executing discovered skill "${skillConfig.name}" via LLM (SKILL.md: ${systemPrompt.length} chars)`);
+
+  // 2. 构造 userPrompt
+  const userPrompt = typeof inputData === 'string' ? inputData : JSON.stringify(inputData);
+
+  // 3. 选择 adapter（优先 config 中指定的 model_id，其次 builtin，再取第一个可用）
+  const preferredModel = node.data?.config?.model_id || node.data?.model_id;
+  let adapter;
+  if (preferredModel && adapters[preferredModel]) {
+    adapter = adapters[preferredModel];
+  } else {
+    adapter = adapters['builtin']
+      || Object.values(adapters).find(a => a && typeof a.chat === 'function');
+  }
+  if (!adapter) {
+    throw new Error(`Discovered skill "${skillConfig.name}" requires an AI model but none is available`);
+  }
+
+  // 4. 调用 LLM
+  const messages = [
+    { role: 'system', content: systemPrompt },
+    { role: 'user', content: userPrompt }
+  ];
+
+  let lastError;
+  for (let attempt = 0; attempt <= retryCount; attempt++) {
+    if (attempt > 0) {
+      onLog('warn', `Retrying discovered skill "${skillConfig.name}" (attempt ${attempt + 1}/${retryCount + 1})`);
+      await sleep(retryDelay);
+    }
+    try {
+      const result = await adapter.chat(messages, {
+        temperature: node.data?.config?.temperature ?? 0.3,
+        max_tokens: node.data?.config?.max_tokens ?? 4096,
+        timeout,
+      });
+      onLog('info', `Discovered skill "${skillConfig.name}" completed`);
+      // 5. 用 safeParseJson 解析输出
+      return safeParseJson(result.content);
+    } catch (err) {
+      lastError = err;
+    }
+  }
+  throw lastError || new Error(`Discovered skill "${skillConfig.name}" execution failed after ${retryCount + 1} attempts`);
+}
+
 function spawnSubprocess(entryPath, entryType, inputJson, timeout) {
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => {
-      child.kill();
-      reject(new Error(`Subprocess timed out after ${timeout}ms`));
-    }, timeout);
-
     let cmd, args;
     if (entryType === 'python') {
-      cmd = process.platform === 'win32' ? 'python' : 'python3';
+      if (process.platform === 'win32') {
+        const candidates = ['python3', 'python', 'py'];
+        cmd = null;
+        for (const c of candidates) {
+          try {
+            require('child_process').execSync(`"${c}" --version`, { stdio: 'ignore', timeout: 3000 });
+            cmd = c;
+            break;
+          } catch {}
+        }
+        if (!cmd) {
+          reject(new Error(`Python not found (tried: ${candidates.join(', ')})`));
+          return;
+        }
+      } else {
+        cmd = 'python3';
+      }
       args = [entryPath];
     } else if (entryType === 'node') {
       cmd = 'node';
@@ -543,7 +687,7 @@ function spawnSubprocess(entryPath, entryType, inputJson, timeout) {
     } else if (entryType === 'shell') {
       if (process.platform === 'win32') {
         cmd = 'cmd.exe';
-        args = ['/c', entryPath];
+        args = ['/d', '/c', entryPath.includes(' ') ? `"${entryPath}"` : entryPath];
       } else {
         cmd = '/bin/sh';
         args = [entryPath];
@@ -557,6 +701,11 @@ function spawnSubprocess(entryPath, entryType, inputJson, timeout) {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, INPUT: inputJson, PYTHONIOENCODING: 'utf-8' },
     });
+
+    const timer = setTimeout(() => {
+      child.kill();
+      reject(new Error(`Subprocess timed out after ${timeout}ms`));
+    }, timeout);
 
     child.stdout.setEncoding('utf8');
     child.stderr.setEncoding('utf8');
@@ -591,4 +740,4 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
-export default { executeWorkflow };
+export default { executeWorkflow, topologicalSort, buildNodeInput };
