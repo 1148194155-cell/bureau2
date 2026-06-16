@@ -37,3 +37,44 @@
    git config --global http.proxy http://127.0.0.1:40000
    git config --global https.proxy http://127.0.0.1:40000
    ```
+
+## 🚀 启动方式 (Startup)
+
+项目根目录有 4 个启动脚本：
+
+| 文件 | 用途 |
+|---|---|
+| start.bat | **主启动入口**（推荐）— 自动安装依赖、启动后端+前端、等后端就绪后自动打开浏览器 |
+| 启动.bat | 简化版启动 — 只启动服务，不等待后端就绪 |
+| electron_start.bat | Desktop 版 — 启动后端+前端+Electron 窗口，退出后自动清理 |
+| start.sh | macOS/Linux 启动脚本 |
+
+### start.bat 流程
+
+双击后执行顺序：
+
+1. 检查 node_modules，缺失则 npm install（含错误提示）
+2. 检查 renderer/node_modules，缺失则 npm install
+3. 后台静默启动后端 (node src/index.js)
+4. 后台静默启动前端 (vite --cwd renderer)
+5. 健康检查循环：每秒 GET /api/health，直到返回 200
+6. 浏览器自动打开 http://localhost:5173
+7. 若未自动打开，控制台打印手动访问提示
+
+关键技术决策：
+- 后台进程使用 `start "" /B`，日志重定向到文件，不弹多余黑窗口
+- 健康检查用 Node.js 内联 http.get，无需 curl
+- 依赖安装失败时有国内镜像源提示 (registry.npmmirror.com) 并暂停
+
+### electron_start.bat
+
+启动后端+前端（带健康检查等待），启动 Electron 窗口，退出时自动清理 node.exe 子进程。日志写入 electron_start.log。
+
+### 手动访问
+
+- 前端：http://localhost:5173
+- 后端 API：http://localhost:3001/api/health
+
+### 端口占用处理
+
+关闭之前启动的旧窗口（任务管理器结束 node.exe），重新双击 start.bat。
