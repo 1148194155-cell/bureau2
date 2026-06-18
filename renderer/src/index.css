@@ -23,7 +23,7 @@ body {
 ::selection { background: rgba(255,90,31,0.25); color: #fff; }
 
 /* ReactFlow overrides */
-.react-flow__node { font-size: 12px; }
+.react-flow__node { font-size: 12px; background: transparent !important; }
 .react-flow__handle {
   width: 7px; height: 7px;
   border: 1.5px solid #FF5A1F;
@@ -106,3 +106,34 @@ input:focus, select:focus, textarea:focus, button:focus-visible {
 /* Raycast-style shadows */
 .raycast-shadow { box-shadow: 0 1px 3px rgba(0,0,0,0.3), 0 2px 12px rgba(0,0,0,0.15); }
 .raycast-shadow-lg { box-shadow: 0 2px 6px rgba(0,0,0,0.25), 0 4px 24px rgba(0,0,0,0.2); }
+
+/* ═════════════════════════════════════════════════════════════
+   手机适配 — 响应式布局
+   手机浏览器打开链接即可使用，后端无需改动。
+   ═════════════════════════════════════════════════════════════ */
+@media (max-width: 768px) {
+  body { overflow: auto; }
+  #root { overflow-y: auto; }
+
+  /* ── 隐藏左右侧边栏，画布占满屏幕 ── */
+  .w-56.border-r { display: none; }               /* ResourcePanel */
+  .shrink-0.border-l { display: none; }            /* AI Chat panel */
+  .resize-handle { display: none; }                /* 分隔条 */
+
+  /* ── Canvas 全宽 ── */
+  .canvas-bg { width: 100% !important; }
+
+  /* ── MiniMap 缩小 ── */
+  .react-flow__minimap { width: 90px !important; height: 70px !important; }
+
+  /* ── RunLogWindow 移动端适配 ── */
+  [class*="RunLogWindow"],
+  div:has(> [class*="runLog"]) { width: 92vw !important; left: 4vw !important; max-height: 50vh; }
+
+  /* ── 弹窗移动端适配 ── */
+  [role="dialog"] { width: 92vw !important; max-width: 92vw !important; left: 4vw !important; top: 8vh !important; }
+
+  /* ── 触摸友好 ── */
+  button { min-height: 38px; }
+  input, select, textarea { font-size: 16px !important; } /* 防止 iOS 自动缩放 */
+}

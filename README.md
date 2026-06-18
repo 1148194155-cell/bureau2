@@ -1,29 +1,21 @@
 ﻿# Local Canvas — 可视化 AI 工作流构建工具
 
-[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
-
-Local Canvas 是一个搭 AI 工作流的本地工具。你可以在白板上拖拽组合各种 AI 能力，做成一个自动化流程，一键运行。
-
-支持本地运行 Qwen2.5-3B（需自行下载 ~2.1GB GGUF 放至 models/ 目录），无需联网、无需 Key、无需装 Ollama。
-
-## 功能
-
-- **可视化工作流** — 拖拽节点、连线，搭 AI 工作流
-- **多模型支持** — OpenAI / Ollama / Anthropic / llama.cpp / 本地模型（需下载）
-- **知识库 RAG** — 把本地文件夹索引到向量库，让 AI 检索你的文档
-- **API 集成** — 添加自定义 API 端点拼接工作流
-- **本地 AI 对话** — 右侧面板直接用大白话指挥 AI 操作画布
-- **Electron 桌面应用** — Windows / macOS / Linux 全平台
-
-## 界面预览
-
-> 截图路径 docs/screenshot.png，运行 `take_screenshot.mjs` 可自动生成。
-
-拖拽节点 → 连线 → AI 对话 → 运行
+双击启动，拖拽搭 AI 工作流。数据全在本地，还能用大白话指挥 AI 帮你搭。
 
 ![Local Canvas 界面](docs/screenshot.png)
 
-### 5 分钟体验流程
+[![License](https://img.shields.io/badge/license-MIT-blue)](LICENSE) [![Node](https://img.shields.io/badge/node-%3E%3D18-brightgreen)](package.json)
+
+| 如果你在找 | Local Canvas 的做法 |
+|-----------|-------------------|
+| 隐私 | 100% 本地，数据不出机器，断网也能跑 |
+| 上手快 | 双击 bat 启动，拖拽 + AI 对话，不用学 |
+| 模型自由 | OpenAI / Ollama / Anthropic / llama.cpp / 本地 GGUF 随意切换 |
+| 省钱 | MIT 开源，免费，不限节点不限额 |
+
+**核心亮点：** 右侧面板直接跟 AI 说人话——"帮我搭一个翻译工作流"——AI 自动拖节点、配参数、连好线，你点运行就能用。
+
+## 5 分钟体验
 
 | 步骤 | 操作 | 耗时 |
 |------|------|------|

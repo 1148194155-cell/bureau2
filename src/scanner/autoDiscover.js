@@ -42,7 +42,6 @@ async function discoverSkills(db) {
           const name = fm.name || entry.name;
           if (seen.has(name)) continue;
           seen.add(name);
-          ensureTable(db);
           db.prepare(
             'INSERT OR IGNORE INTO discovered_skills (name, description, skill_path, version) VALUES (?, ?, ?, ?)'
           ).run(name, fm.description || '', fullPath, fm.version || '1.0.0');
@@ -197,6 +196,8 @@ async function discoverKnowledgeBases(db) {
     }
   }
 
+  let indexingTasks = 0;
+  const MAX_CONCURRENT_INDEX = 2;
   for (const row of rows) {
     const skillDir = row.skill_path;
     const name = path.basename(skillDir);
@@ -218,14 +219,18 @@ async function discoverKnowledgeBases(db) {
     count++;
     console.log(`  + Knowledge: ${name}`);
 
-    // 自动索引（不阻塞启动，异步跑）
+    // 自动索引（限制并发数）
     if (embedFn) {
+      while (indexingTasks >= MAX_CONCURRENT_INDEX) {
+        await new Promise(r => setTimeout(r, 500));
+      }
+      indexingTasks++;
       const { indexKnowledgeBase } = await import('./skillScanner.js');
       indexKnowledgeBase(db, kbId, skillDir, embedFn).then(result => {
         console.log(`    -> Indexed ${name}: ${result?.totalChunks || 0} chunks`);
       }).catch(err => {
         console.warn(`    -> Index failed for ${name}: ${err.message}`);
-      });
+      }).finally(() => { indexingTasks--; });
     }
   }
   console.log(`[AutoDiscover] Knowledge Bases: ${count} seeded`);

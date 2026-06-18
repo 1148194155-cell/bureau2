@@ -1,13 +1,60 @@
-import { ArrowRight, Sparkles, Settings, MousePointer } from "lucide-react";
+import { ArrowRight, Sparkles, Settings, MousePointer, Zap } from "lucide-react";
 import { useState } from "react";
 import useStore from "../store/store";
+import toast from "react-hot-toast";
 
 export default function OnboardingOverlay() {
   const [dismissed, setDismissed] = useState(() => {
-    try { return localStorage.getItem('lc_onboarding_dismissed') === '1'; }
+    try { return localStorage.getItem('localcanvas_quick_start_loaded') === '1'; }
     catch { return false; }
   });
   const nodes = useStore(s => s.nodes);
+  const models = useStore(s => s.models);
+  const hasModel = models?.some(m => m.online);
+  const [demoRunning, setDemoRunning] = useState(false);
+
+  const handleQuickDemo = async () => {
+    setDemoRunning(true);
+    const s = useStore.getState();
+    // Clear canvas and load a demo workflow
+    s.clearCanvas();
+    s.setCurrentWorkflowName("体验演示");
+
+    // Create demo nodes: input + model/output hybrid
+    const inputId = `demo_in_${Date.now()}`;
+    const outId = `demo_out_${Date.now()}`;
+
+    s.addNode("input", { label: "输入", input: "你好，Local Canvas！" }, { x: 120, y: 220 });
+    if (hasModel) {
+      s.addNode("model", { label: "AI 处理", systemPrompt: "你是一个友好的AI助手。请用中文回复用户的问候。", prompt: "{{input}}", temperature: 0.7, max_tokens: 256 }, { x: 440, y: 220 });
+    } else {
+      s.addNode("code", { label: "演示处理", code: '({ reply: "👋 你好！这是 Local Canvas 的演示模式。\\n\\n要让它真正变智能，请到「设置」页面添加一个模型（OpenAI / Ollama）。\\n\\n你的输入是: " + (input?.input || JSON.stringify(input).slice(0,50)) })' }, { x: 440, y: 220 });
+    }
+    s.addNode("output", { label: "输出结果" }, { x: 740, y: 220 });
+
+    // Connect all
+    const e1Id = `demo_e1_${Date.now()}`;
+    const e2Id = `demo_e2_${Date.now()}`;
+    // Get actual node IDs from store
+    setTimeout(() => {
+      const st = useStore.getState();
+      const ns = st.nodes;
+      const inNode = ns.find(n => n.data?.label === "输入");
+      const midNode = ns.find(n => n.data?.label?.includes("处理") || n.data?.label?.includes("AI"));
+      const outNode = ns.find(n => n.data?.label === "输出结果");
+      if (inNode && midNode && outNode) {
+        useStore.setState({
+          edges: [
+            { id: e1Id, source: inNode.id, target: midNode.id },
+            { id: e2Id, source: midNode.id, target: outNode.id },
+          ],
+          isDirty: true,
+        });
+      }
+      setDemoRunning(false);
+      toast.success(hasModel ? "演示工作流已就绪，点「运行」试试！" : "演示工作流已就绪（无需模型），点「运行」试试！", { icon: "🎉", duration: 5000 });
+    }, 100);
+  };
 
   // 只在用户主动"跳过"后才永久隐藏；
   // "去设置"按钮不算永久隐藏——下次打开空画布还会出现
@@ -34,6 +81,12 @@ export default function OnboardingOverlay() {
           <Step icon={ArrowRight} num="3" text="连线 → 点运行" sub="或右边 AI 对话框里打字让它帮你搭" />
         </div>
 
+        <div className="flex gap-2 justify-center">
+          <button onClick={handleQuickDemo} disabled={demoRunning}
+            className="px-4 py-2 rounded-xl bg-gradient-to-r from-accent-600 to-violet-600 hover:from-accent-500 hover:to-violet-500 text-xs text-white font-semibold transition-all flex items-center gap-1.5 shadow-lg shadow-accent-700/20 disabled:opacity-50">
+            <Zap size={13} />{demoRunning ? "加载中..." : "一键体验"}
+          </button>
+        </div>
         <div className="flex gap-2 justify-center">
           <button onClick={() => {
             setDismissed(true);

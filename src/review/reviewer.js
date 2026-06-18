@@ -267,12 +267,24 @@ function reviewSecurity(nodes) {
     'process.exit', 'eval(', 'Function('
   ];
 
+  // Network safety: flag API nodes hitting internal/private IPs
+  const PRIVATE_IP_RANGES = [
+    /^https?:\/\/10\.\d+\.\d+\.\d+/,
+    /^https?:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+/,
+    /^https?:\/\/192\.168\.\d+\.\d+/,
+    /^https?:\/\/127\.\d+\.\d+\.\d+/,
+    /^https?:\/\/localhost/,
+    /^https?:\/\/\[::1\]/,
+    /^https?:\/\/0\.0\.0\.0/,
+  ];
+
   for (const n of nodes) {
     const nodeType = n.type || n.data?.type;
     const data = n.data || {};
 
     if (nodeType === 'code') {
       const code = data.code || '';
+      const sandboxMode = data.config?.sandbox || data.sandbox || 'docker';
       for (const pat of DANGEROUS_PATTERNS) {
         if (code.includes(pat)) {
           issues.push({
@@ -282,6 +294,42 @@ function reviewSecurity(nodes) {
             suggestion: 'Avoid filesystem access, subprocesses, and dynamic code execution in code nodes'
           });
           break;
+        }
+      }
+      // Warn about VM sandbox mode (less secure)
+      if (code.trim() && sandboxMode !== 'docker') {
+        issues.push({
+          severity: 'warning',
+          nodeId: n.id,
+          message: 'Code node using in-process VM sandbox — only use trusted code',
+          suggestion: 'Set sandbox mode to "docker" for full isolation. Install Docker Desktop to enable.'
+        });
+      }
+    }
+
+    if (nodeType === 'skill' || nodeType === 'code') {
+      const timeout = data.timeout || data.config?.timeout;
+      if (!timeout || timeout > 120000) {
+        issues.push({
+          severity: 'warning',
+          nodeId: n.id,
+          message: 'No timeout or timeout > 120s — long-running processes may hang the workflow',
+          suggestion: 'Set a reasonable timeout (e.g. 30000-60000ms) to prevent resource exhaustion'
+        });
+      }
+    }
+
+    if (nodeType === 'api' || nodeType === 'api_caller') {
+      const url = data.config?.url || data.url || '';
+      if (url) {
+        const isPrivate = PRIVATE_IP_RANGES.some(r => r.test(url));
+        if (isPrivate) {
+          issues.push({
+            severity: 'warning',
+            nodeId: n.id,
+            message: `API node targets a private/internal IP: ${url}`,
+            suggestion: 'Ensure this is intentional. Calls to internal services may expose local network resources.'
+          });
         }
       }
     }

@@ -9,6 +9,7 @@ export default function SettingsPage() {
   const { t } = useI18n();
   const [activeTab, setActiveTab] = useState("models");
   const [panel, setPanel] = useState(null);
+  const [authDisabled, setAuthDisabled] = useState(false);
   const { models, apiKeys, knowledgeBases, outputDir, setModels, setApiKeys, setKnowledgeBases, setOutputDir } = useStore();
 
   const TABS = [
@@ -29,6 +30,13 @@ export default function SettingsPage() {
   }, [t]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
+
+  useEffect(() => {
+    fetch('/api/auth/status')
+      .then(r => r.json())
+      .then(d => { if (d.success) setAuthDisabled(d.data.authDisabled); })
+      .catch(() => {});
+  }, []);
 
   return (
     <div className="h-full flex flex-col bg-surface-900">
@@ -57,6 +65,33 @@ export default function SettingsPage() {
           className="flex-1 h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 outline-none focus:border-accent-500/40"
         />
         <span className="text-[10px] text-surface-500">{t('settings.outputDirHint')}</span>
+      </div>
+
+      {/* Auth toggle */}
+      <div className="px-5 py-3 border-b border-surface-700/40 flex items-center gap-3">
+        <span className="text-[10px] font-medium text-surface-400 uppercase tracking-wide">认证</span>
+        <button
+          onClick={async () => {
+            try {
+              const res = await fetch('/api/auth/toggle', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ disabled: !authDisabled }),
+              });
+              const data = await res.json();
+              if (data.success) {
+                setAuthDisabled(data.data.authDisabled);
+                toast.success(data.data.authDisabled ? '认证已关闭 — 无需登录' : '认证已开启 — 需要登录');
+              }
+            } catch { toast.error('切换失败'); }
+          }}
+          className={`h-6 px-3 rounded-full text-[10px] font-medium transition-colors ${authDisabled ? 'bg-amber-500/20 text-amber-400' : 'bg-emerald-500/20 text-emerald-400'}`}
+        >
+          {authDisabled ? '已关闭' : '已开启'}
+        </button>
+        <span className="text-[10px] text-surface-500">
+          {authDisabled ? '任何人可访问，适合本地单人使用' : '需要登录才能使用，适合多人或公网环境'}
+        </span>
       </div>
 
       <div className="flex-1 overflow-hidden flex">
@@ -121,6 +156,7 @@ function SettingsPanel({ type, onClose, onDone }) {
       openai: { endpoint: "https://api.openai.com/v1", model: "gpt-4o" },
       ollama: { endpoint: "http://localhost:11434/v1", model: "qwen2.5:7b" },
       anthropic: { endpoint: "https://api.anthropic.com/v1", model: "claude-sonnet-4-20250514" },
+      llamacpp: { endpoint: "http://localhost:8080", model: "default" },
     };
     const preset = presets[type] || {};
     setForm({ ...form, adapter_type: type, endpoint: preset.endpoint || form.endpoint, model: preset.model || form.model });

@@ -15,11 +15,20 @@
     "dev:electron": "cd renderer && npm run electron:dev",
     "dev:all": "concurrently -n backend,frontend -c blue,green \"node --watch src/index.js\" \"cd renderer && npm run dev\"",
     "test": "node tests/workflow.test.js",
+    "test:all": "node tests/comprehensive.test.js",
+    "test:ci": "node tests/comprehensive.test.js",
+    "test:unit": "vitest run --config vitest.config.js",
+    "test:unit:watch": "vitest --config vitest.config.js",
+    "test:coverage": "vitest run --config vitest.config.js --coverage",
+    "test:e2e": "playwright test --config playwright.config.js",
     "postinstall": "cd renderer && npm install"
   },
   "devDependencies": {
+    "@playwright/test": "^1.61.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "concurrently": "^9.2.1",
-    "playwright": "^1.60.0"
+    "playwright": "^1.60.0",
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "better-sqlite3": "^11.6.0",
@@ -28,9 +37,15 @@
     "express": "^4.21.0",
     "fs-extra": "^11.2.0",
     "js-yaml": "^4.2.0",
+    "mammoth": "^1.12.0",
+    "nat-upnp": "^1.1.1",
     "node-llama-cpp": "^3.18.1",
+    "pdf-parse": "^2.4.5",
+    "pino": "^10.3.1",
     "uuid": "^14.0.0",
-    "ws": "^8.18.0"
+    "ws": "^8.18.0",
+    "xlsx": "^0.18.5",
+    "zod": "^4.4.3"
   },
   "engines": {
     "node": ">=18.0.0"

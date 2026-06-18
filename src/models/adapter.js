@@ -35,6 +35,17 @@ export class BaseModelAdapter {
   async ping() {
     return false;
   }
+
+  /**
+   * Vision / multimodal — analyze an image with an optional text prompt.
+   * @param {Array<{type:string, source?:object, text?:string}>|string[]} images - Base64 data URLs or file paths
+   * @param {string} [prompt] - Optional text instruction
+   * @param {object} [options] - Additional options
+   * @returns {Promise<{content:string, usage?:object}>}
+   */
+  async vision(images, prompt = '', options = {}) {
+    throw new Error('vision() not implemented by this adapter');
+  }
 }
 
 // ── Ollama Adapter ──────────────────────────────────────────────────────────
@@ -101,6 +112,47 @@ export class OllamaAdapter extends BaseModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  async vision(images, prompt = '', options = {}) {
+    // Ollama supports vision via chat with base64 images
+    const imageContents = images.map(img => {
+      const base64 = typeof img === 'string' && !img.startsWith('data:')
+        ? img  // assume already base64
+        : img;
+      return { type: 'image_url', image_url: { url: base64 } };
+    });
+
+    const messages = [{
+      role: 'user',
+      content: prompt || 'Describe this image in detail.',
+      images: imageContents.map(i => i.image_url.url),
+    }];
+
+    const body = {
+      model: this.model,
+      messages,
+      stream: false,
+      options: {
+        temperature: options.temperature ?? 0.5,
+        ...(options.max_tokens ? { num_predict: options.max_tokens } : {}),
+      },
+    };
+
+    const res = await fetch(`${this.endpoint}/api/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(options.timeout ?? 120000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`Ollama vision error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    return { content: data.message?.content || '', usage: {} };
   }
 }
 
@@ -177,6 +229,66 @@ export class OpenAIAdapter extends BaseModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  async vision(images, prompt = '', options = {}) {
+    // OpenAI Vision API — images can be base64 data URLs or file paths (read as base64)
+    const fs = await import('fs-extra');
+    const imageContents = await Promise.all(images.map(async (img) => {
+      let url;
+      if (typeof img === 'string') {
+        if (img.startsWith('data:image/')) {
+          url = img;
+        } else if (img.startsWith('/') || /^[A-Z]:/i.test(img)) {
+          // File path — read and convert to base64 data URL
+          const buf = await fs.default.readFile(img);
+          const ext = img.split('.').pop()?.toLowerCase() || 'png';
+          const mime = ext === 'jpg' ? 'jpeg' : ext;
+          url = `data:image/${mime};base64,${buf.toString('base64')}`;
+        } else {
+          url = img; // assume already base64
+        }
+      } else {
+        url = String(img);
+      }
+      return { type: 'image_url', image_url: { url, detail: options.detail || 'auto' } };
+    }));
+
+    const messages = [{
+      role: 'user',
+      content: [
+        { type: 'text', text: prompt || 'Describe this image in detail.' },
+        ...imageContents,
+      ],
+    }];
+
+    const body = {
+      model: this.model,
+      messages,
+      max_tokens: options.max_tokens ?? 1024,
+      temperature: options.temperature ?? 0.5,
+    };
+
+    const res = await fetch(`${this.endpoint}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${this.apiKey}`,
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(options.timeout ?? 120000),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      throw new Error(`OpenAI vision error ${res.status}: ${errText}`);
+    }
+
+    const data = await res.json();
+    return {
+      content: data.choices?.[0]?.message?.content || '',
+      usage: data.usage,
+    };
   }
 }
 
@@ -362,7 +474,7 @@ export function createAdapter(model) {
     try {
       config.apiKey = decrypt(config.apiKey);
     } catch {
-      console.warn(`[Adapter] Failed to decrypt apiKey for "${model.name}" — using as-is (may cause auth failure)`);
+      throw new Error(`API Key 解密失败，请重新配置模型 "${model.name}" 的 Key`);
     }
   }
 

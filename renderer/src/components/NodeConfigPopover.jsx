@@ -3,6 +3,7 @@ import { Trash2, X, FlaskConical, Globe, Send, FileOutput, Brain, Pencil, GitFor
 import toast from "react-hot-toast";
 import useStore from "../store/store";
 import { useI18n } from "../i18n";
+import ConditionEditor from "./ConditionEditor";
 
 const TYPE_ICONS = {
   skill: FlaskConical, knowledge: Globe, output: Send, file_output: FileOutput,
@@ -197,15 +198,35 @@ export default function NodeConfigPopover() {
           </div>
         )}
 
-        {/* ★ condition 节点：表达式 */}
+        {/* ★ condition 节点：可视化条件编辑器 */}
         {node.type === "condition" && (
           <div>
-            <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">条件表达式</label>
-            <input value={config.expression || nodeData.config?.expression || ""}
-              onChange={(e) => setConfig({ ...config, expression: e.target.value })}
-              placeholder='input.score > 0.5'
-              className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 font-mono outline-none" />
-            <p className="text-[9px] text-surface-600 mt-0.5">JavaScript 表达式，input 是上游数据。返回 true 放行，false 阻断。</p>
+            <ConditionEditor
+              config={config.expression ? { raw: config.expression } : (config.conditions ? config : { conditions: [], logic: "&&" })}
+              onChange={(editorCfg) => {
+                if (editorCfg.raw) {
+                  setConfig({ ...config, expression: editorCfg.raw });
+                } else {
+                  // Convert visual conditions to expression string
+                  const parts = editorCfg.conditions.map(c => {
+                    const field = c.field || "output";
+                    switch (c.op) {
+                      case "==": case "!=": case ">": case ">=": case "<": case "<=":
+                        return `input.${field} ${c.op} ${JSON.stringify(c.value)}`;
+                      case "includes": return `String(input.${field}).includes("${c.value}")`;
+                      case "startsWith": return `String(input.${field}).startsWith("${c.value}")`;
+                      case "endsWith": return `String(input.${field}).endsWith("${c.value}")`;
+                      case "regex": return `/\\b${c.value}\\b/.test(String(input.${field}))`;
+                      case "truthy": return `!!input.${field}`;
+                      case "falsy": return `!input.${field}`;
+                      default: return `input.${field} ${c.op} ${c.value}`;
+                    }
+                  });
+                  const expr = parts.length === 0 ? "true" : parts.join(` ${editorCfg.logic} `);
+                  setConfig({ ...config, expression: expr, conditions: editorCfg.conditions, logic: editorCfg.logic });
+                }
+              }}
+            />
           </div>
         )}
 
@@ -255,6 +276,18 @@ export default function NodeConfigPopover() {
                 className="w-full px-2 py-1.5 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-[10px] placeholder-surface-600 font-mono resize-none outline-none" />
             </div>
           </>
+        )}
+
+        {/* ★ workflow 节点：选择子流程 */}
+        {node.type === "workflow" && (
+          <div>
+            <label className="text-[10px] font-medium text-surface-500 uppercase block mb-1">子流程 ID</label>
+            <input value={config.workflowId || nodeData.config?.workflowId || ""}
+              onChange={(e) => setConfig({ ...config, workflowId: e.target.value ? parseInt(e.target.value) : undefined })}
+              placeholder="输入已保存的工作流 ID"
+              className="w-full h-7 px-2 rounded-lg bg-surface-800 border border-surface-600/50 text-surface-200 text-xs placeholder-surface-600 font-mono outline-none" />
+            <p className="text-[9px] text-surface-600 mt-0.5">保存画布后获得 ID，填入此处即可作为子流程嵌入</p>
+          </div>
         )}
 
         <div>

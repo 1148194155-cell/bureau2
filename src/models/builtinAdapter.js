@@ -61,9 +61,24 @@ export class BuiltinAdapter extends BaseModelAdapter {
       temperature: options.temperature ?? 0.7,
       maxTokens: options.max_tokens ?? 2048,
     });
+    const toolCalls = this._extractToolCalls(response);
+    const content = this._stripToolCalls(response);
+
+    // Fallback: 检测到工具调用意图但解析失败 → 降级提示
+    if (toolCalls.length === 0 && options.tools?.length > 0 && this.detectToolIntent(response)) {
+      return {
+        content: content
+          ? content + '\n\n⚠️ 本地模型未能正确生成操作指令。请尝试用更明确的方式描述你的需求，或切换到云端模型（如 GPT-4o）获得更可靠的操作体验。'
+          : '⚠️ 本地模型未能正确生成操作指令。请尝试：\n1. 换一种更明确的方式描述需求\n2. 在设置中添加云端模型（OpenAI/Claude）以获得更可靠的操作体验\n3. 手动从左侧面板拖拽节点到画布上',
+        tool_calls: [],
+        usage: {},
+        _fallback: true,
+      };
+    }
+
     return {
-      content: this._stripToolCalls(response),
-      tool_calls: this._extractToolCalls(response),
+      content,
+      tool_calls: toolCalls,
       usage: {},
     };
   }
@@ -145,7 +160,20 @@ export class BuiltinAdapter extends BaseModelAdapter {
     result = result.replace(/\n?\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*[\s\S]*?\}\s*$/g, '').trim();
     // 去掉任何残留的 <tool_call> 或 </tool_call> 标签
     result = result.replace(/<\/?tool_call>\s*/g, '').trim();
+    // 去掉孤立的 JSON 块（模型可能输出了一半的工具调用）
+    result = result.replace(/\n?\{\s*"name"\s*:\s*"[^"]*"\s*(?:,\s*"arguments"\s*:\s*\{[^}]*\})?\s*\}?\s*$/g, '').trim();
     return result;
+  }
+
+  /**
+   * Detect if the model likely tried to call a tool but produced malformed output.
+   * Returns a fallback hint if tool intent is detected but no valid calls parsed.
+   */
+  detectToolIntent(text) {
+    const hasToolTag = /<tool_call/i.test(text);
+    const hasToolJson = /\{\s*"name"\s*:\s*"[^"]+"/.test(text);
+    const hasActionKeywords = /(?:添加|删除|运行|保存|清空|加载|导出|连接|更新|配置|add|delete|run|save|clear|load|export|connect|update|config)/i.test(text);
+    return hasToolTag || hasToolJson || hasActionKeywords;
   }
 
   async embed(texts) {
@@ -167,5 +195,16 @@ export class BuiltinAdapter extends BaseModelAdapter {
     } catch {
       return false;
     }
+  }
+
+  /**
+   * Vision — not supported by the built-in GGUF model.
+   * Returns a helpful error message pointing to cloud models.
+   */
+  async vision(_images, _prompt = '', _options = {}) {
+    throw new Error(
+      '内置本地模型不支持图像识别。请使用支持 Vision 的云端模型（如 GPT-4o、Claude 3、Ollama 的 llava/minicpm-v 等）。' +
+      '\n在设置页面添加一个支持 Vision 的模型即可。'
+    );
   }
 }

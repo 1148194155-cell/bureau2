@@ -1,21 +1,18 @@
 ﻿import express from 'express';
 import cors from 'cors';
 import http from 'node:http';
-import { initDatabase, closeDatabase } from './db.js';
+import { AppError } from './errors.js';
+import { initDatabase, closeDatabase, backupDatabase } from './db.js';
 import wsManager from './websocket.js';
 import { autoDiscover } from './scanner/autoDiscover.js';
-import apiRouter from './routes/api.js';
+import apiRouter, { startModelsCacheRefresh, stopModelsCacheRefresh, startScheduler, stopScheduler } from './routes/api.js';
 import { registerAdapter } from './models/adapter.js';
-import { BuiltinAdapter } from './models/builtinAdapter.js';
+import logger from './logger.js';
 import path from 'node:path';
 import fs from 'fs-extra';
 import os from 'node:os';
 import { fileURLToPath } from 'node:url';
-
-// Configuration
-
-const PORT = parseInt(process.env.PORT, 10) || 3001;
-const HOST = process.env.HOST || '0.0.0.0';
+import { config } from './config.js';
 
 // Ensure the __dirname equivalent for ESM
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -30,27 +27,21 @@ fs.ensureDirSync(path.join(os.homedir(), '.localcanvas', 'keys'));
 // Initialize database
 const db = initDatabase();
 autoDiscover(db).catch(err => {
-  console.error('[AutoDiscover] Startup discovery failed:', err.message);
+  logger.error({ err }, 'Startup discovery failed');
 });
 
-// Register built-in model adapter — 原生的可编译也可能失败，不阻塞启动
+// Register built-in model adapter — stub if node-llama-cpp not available
 let builtinAvailable = false;
-try {
-  const { getLlama } = await import('node-llama-cpp');
-  builtinAvailable = true;
-  registerAdapter('builtin', BuiltinAdapter);
-} catch (err) {
-  console.warn('[Server] node-llama-cpp unavailable — builtin model disabled');
-  console.warn('  Install with: npm install node-llama-cpp');
-  console.warn('  Or use OpenAI / Ollama / Anthropic models instead');
-  const { BaseModelAdapter } = await import('./models/adapter.js');
-  class StubBuiltin extends BaseModelAdapter {
-    async chat() { throw new Error('内置模型不可用：node-llama-cpp 未安装或编译失败。请改用 OpenAI/Ollama/Anthropic 模型。'); }
-    async embed() { throw new Error('内置模型不可用'); }
-    async ping() { return false; }
-  }
-  registerAdapter('builtin', StubBuiltin);
+// Skipping node-llama-cpp import — blocks startup on systems without cmake
+logger.info('Builtin model skipped — install node-llama-cpp + cmake to enable');
+const { BaseModelAdapter } = await import('./models/adapter.js');
+class StubBuiltin extends BaseModelAdapter {
+  async chat() { throw new Error('内置模型不可用：node-llama-cpp 未安装。请改用 OpenAI/Ollama/Anthropic。'); }
+  async embed() { throw new Error('内置模型不可用'); }
+  async vision() { throw new Error('内置模型不可用：Vision 需要云端模型支持。'); }
+  async ping() { return false; }
 }
+registerAdapter('builtin', StubBuiltin);
 
 // Express App Setup
 
@@ -85,7 +76,8 @@ app.use((req, res, next) => {
   const start = Date.now();
   res.on('finish', () => {
     const duration = Date.now() - start;
-    console.log(`[HTTP] ${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
+    logger.info({ method: req.method, url: req.originalUrl, statusCode: res.statusCode, durationMs: duration },
+      `${req.method} ${req.originalUrl} -> ${res.statusCode} (${duration}ms)`);
   });
   next();
 });
@@ -107,13 +99,18 @@ if (fs.pathExistsSync(frontendPath)) {
 }
 
 // Global Error Handler
-
 app.use((err, req, res, _next) => {
-  console.error('[Error]', err);
-  res.status(err.status || 500).json({
-    success: false,
-    error: err.message || 'Internal server error',
-  });
+  if (err instanceof AppError) {
+    logger.warn({ err, code: err.code }, 'Application error');
+    return res.status(err.httpStatus).json(err.toJSON());
+  }
+  // body-parser malformed JSON → return 400, not 500
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    logger.warn({ err }, 'Malformed request body');
+    return res.status(400).json({ success: false, error: 'Invalid JSON in request body', code: 'BAD_REQUEST' });
+  }
+  logger.error({ err }, 'Unhandled error');
+  res.status(500).json({ success: false, error: 'Internal server error', code: 'INTERNAL' });
 });
 
 // Create HTTP Server and attach WebSocket
@@ -126,16 +123,18 @@ wsManager.init(server);
 // Graceful Shutdown
 
 function shutdown(signal) {
-  console.log(`\n[Server] Received ${signal}. Shutting down gracefully...`);
+  logger.info(`Received ${signal}. Shutting down gracefully...`);
+  stopModelsCacheRefresh();
+  stopScheduler();
   server.close(() => {
     closeDatabase();
-    console.log('[Server] Closed. Goodbye!');
+    logger.info('Server closed. Goodbye!');
     process.exit(0);
   });
 
   // Force exit after 10s if graceful shutdown fails
   setTimeout(() => {
-    console.error('[Server] Forced shutdown after timeout');
+    logger.error('Forced shutdown after timeout');
     process.exit(1);
   }, 10000);
 }
@@ -145,13 +144,29 @@ process.on('SIGTERM', () => shutdown('SIGTERM'));
 
 // Start Server
 
-server.listen(PORT, HOST, () => {
-  console.log('');
-  console.log('=== Local Canvas Backend Server ===');
-  console.log(`  REST API  : http://${HOST}:${PORT}/api`);
-  console.log(`  WebSocket : ws://${HOST}:${PORT}/ws`);
-  console.log(`  Health    : http://${HOST}:${PORT}/api/health`);
-  console.log('');
+server.listen(config.server.port, config.server.host, () => {
+  logger.info(`REST API  : http://${config.server.host}:${config.server.port}/api`);
+  logger.info(`WebSocket : ws://${config.server.host}:${config.server.port}/ws`);
+  logger.info(`Health    : http://${config.server.host}:${config.server.port}/api/health`);
+
+  // Start background model status refresh
+  startModelsCacheRefresh(30000);
+  // Start workflow scheduler
+  startScheduler(30000);
+
+  // Daily database backup — run first backup immediately, then every 24h at 02:00
+  backupDatabase();
+  const msUntil2am = () => {
+    const now = new Date();
+    const target = new Date(now);
+    target.setHours(2, 0, 0, 0);
+    return target > now ? target - now : target - now + 86400000;
+  };
+  setTimeout(() => {
+    setInterval(() => backupDatabase(), 86400000);
+  }, msUntil2am());
+  logger.info('DB backup: initial backup done, daily schedule at 02:00');
 });
 
 export default app;
+

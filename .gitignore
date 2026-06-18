@@ -32,3 +32,38 @@ local-canvas/scripts/node_modules/
 test_screenshots/
 _check_db*.py
 _tmp_check*.py
+
+# === Temp / log / artifact files ===
+_out.txt
+_record_video.mjs
+bore.exe
+bore_*.txt
+cf_*.txt
+cf2_*.txt
+cf3_*.txt
+cf_final*.txt
+cf_final2*.txt
+cf_final3*.txt
+coverage/
+d
+frpc.ini
+lt_*.txt
+output/
+renderer/vite*.err
+ssh_*.txt
+test-results/
+{
+¸öÈËÍøÕ¾/
+
+# === Backup files ===
+*.bak
+
+# === Python cache ===
+__pycache__/
+*.pyc
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo

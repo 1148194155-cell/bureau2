@@ -294,33 +294,6 @@ router.delete('/knowledge/:id', asyncHandler(async (req, res) => {
   res.json({ success: true });
 }));
 
-// Alias: /api/knowledge-bases → /api/knowledge (for compatibility)
-router.get('/knowledge-bases', asyncHandler(async (req, res) => {
-  const db = getDb();
-  const userId = getUserId(req);
-  const bases = db.prepare('SELECT id, user_id, name, folder_path, last_indexed, created_at FROM knowledge_bases WHERE user_id = ?').all(userId);
-  res.json({ success: true, data: bases });
-}));
-
-router.post('/knowledge-bases', asyncHandler(async (req, res) => {
-  const db = getDb();
-  const userId = getUserId(req);
-  const { name, folder_path } = req.body;
-
-  if (!name || !folder_path) {
-    return res.status(400).json({ success: false, error: 'name and folder_path are required' });
-  }
-
-  const result = db.prepare(
-    'INSERT INTO knowledge_bases (user_id, name, folder_path) VALUES (?, ?, ?)'
-  ).run(userId, name, folder_path);
-
-  res.json({
-    success: true,
-    data: { id: result.lastInsertRowid, name, folder_path },
-  });
-}));
-
 // Workflow Routes
 
 /**
@@ -819,12 +792,6 @@ router.get('/health', (req, res) => {
 
 // Scanner Routes
 
-/**
- * GET /api/scanner/status — get scanner status
- */
-router.get('/scanner/status', (req, res) => {
-  res.json({ success: true, data: { status: scannerStatus, lastScan: scannerLastScan } });
-});
 
 /**
  * POST /api/scanner/rescan — trigger a rescan of skills/models/apis

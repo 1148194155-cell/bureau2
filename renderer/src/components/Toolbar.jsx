@@ -1,4 +1,4 @@
-import { Play, Save, Download, FolderOpen, Undo2, Redo2, Trash2, FilePlus, GripHorizontal } from "lucide-react";
+import { Play, Save, Download, FolderOpen, Undo2, Redo2, Trash2, FilePlus, GripHorizontal, LayoutTemplate } from "lucide-react";
 import { useRef, useEffect, useCallback, useState } from "react";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
@@ -6,6 +6,7 @@ import { saveWorkflow, runWorkflow, createExecutionSocket } from "../api/api";
 import { useI18n } from "../i18n";
 import SaveModal from "./SaveModal";
 import LoadModal from "./LoadModal";
+import TemplateModal from "./TemplateModal";
 
 export default function Toolbar() {
   const store = useStore();
@@ -15,6 +16,7 @@ export default function Toolbar() {
   // Modal state
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showLoadModal, setShowLoadModal] = useState(false);
+  const [showTemplateModal, setShowTemplateModal] = useState(false);
 
   const handleRun = useCallback(async () => {
     const s = useStore.getState();
@@ -26,15 +28,70 @@ export default function Toolbar() {
     try {
       const { execution_id } = await runWorkflow({ nodes: s.nodes, edges: s.edges, options: { outputDir: s.outputDir || undefined } });
       s.setExecutionId(execution_id);
+      s.addExecutionToHistory(execution_id);
       toast.dismiss(toastId);
       toast.success(t('toolbar.started'));
       const ws = createExecutionSocket(execution_id);
       wsRef.current = ws;
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
-        if (msg.type === "log") s.addExecutionLog(msg.data);
-        else if (msg.type === "complete") { s.setExecutionStatus("completed"); s.addExecutionLog({ level: "info", message: t('runLog.done') }); wsRef.current = null; toast.success('工作流执行完成', { icon: '✅', duration: 4000 }); }
-        else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); wsRef.current = null; }
+        if (msg.type === "log") {
+          s.addExecutionLog(msg.data);
+          const logMsg = msg.data.message || '';
+          const nodeState = useStore.getState().nodeExecutionState;
+          const nodes = useStore.getState().nodes;
+          // Match: ✓ NodeName 执行完成
+          const doneMatch = logMsg.match(/✓\s+(.+?)\s+执行完成/);
+          if (doneMatch) {
+            const label = doneMatch[1].trim();
+            const node = nodes.find(n => (n.data?.label || n.id) === label);
+            if (node) useStore.getState().updateNodeExecution(node.id, 'completed');
+          }
+          // Match: ✗ NodeName 失败
+          const failMatch = logMsg.match(/✗\s+(.+?)\s+失败/);
+          if (failMatch) {
+            const label = failMatch[1].trim();
+            const node = nodes.find(n => (n.data?.label || n.id) === label);
+            if (node) useStore.getState().updateNodeExecution(node.id, 'failed');
+          }
+          // Match: ⊘ NodeName 已跳过
+          const skipMatch = logMsg.match(/⊘\s+(.+?)\s+已跳过/);
+          if (skipMatch) {
+            const label = skipMatch[1].trim();
+            const node = nodes.find(n => (n.data?.label || n.id) === label);
+            if (node) useStore.getState().updateNodeExecution(node.id, 'skipped');
+          }
+          // Match: Subprocess entry
+          const subMatch = logMsg.match(/📦\s+进入子流程/);
+          if (subMatch) {
+            // Find workflow nodes and mark as running
+            const wfNodes = nodes.filter(n => n.type === 'workflow');
+            for (const wn of wfNodes) useStore.getState().updateNodeExecution(wn.id, 'running');
+          }
+          const subDone = logMsg.match(/📦\s+子流程.*完成/);
+          if (subDone) {
+            const wfNodes = nodes.filter(n => n.type === 'workflow' && nodeState[n.id] === 'running');
+            for (const wn of wfNodes) useStore.getState().updateNodeExecution(wn.id, 'completed');
+          }
+        }
+        else if (msg.type === "complete") {
+          s.setExecutionStatus("completed");
+          s.addExecutionLog({ level: "info", message: t('runLog.done') });
+          // Save per-node results for structured visualization
+          if (msg.result?.results) {
+            s.setExecutionResults(msg.result.results);
+          }
+          wsRef.current = null;
+          toast.success('工作流执行完成', { icon: '✅', duration: 4000 });
+        }
+        else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); wsRef.current = null; toast.error('工作流执行失败', { icon: '❌', duration: 5000 }); if ('Notification' in window && Notification.permission === 'granted') { new Notification('Local Canvas - 执行失败', { body: msg.error?.substring(0, 120) || '工作流执行未完成', icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ef4444"/><text x="50" y="68" text-anchor="middle" font-size="55" font-weight="bold" fill="white">✗</text></svg>' }); } }
+        else if (msg.type === "step_pause") {
+          s.addExecutionLog({ level: "info", message: `⏸ 暂停于节点: ${msg.data?.label || msg.data?.id}` });
+          if (msg.data?.id) {
+            const node = nodes.find(n => n.id === msg.data.id);
+            if (node) useStore.getState().updateNodeExecution(msg.data.id, 'running');
+          }
+        }
       };
       ws.onerror = () => { wsRef.current = null; };
       ws.onclose = () => { wsRef.current = null; };
@@ -100,6 +157,13 @@ export default function Toolbar() {
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, [handleLoad, handleNew, handleExport]);
 
+  // Request desktop notification permission on mount
+  useEffect(() => {
+    if ('Notification' in window && Notification.permission === 'default') {
+      Notification.requestPermission();
+    }
+  }, []);
+
   const handleClear = () => {
     if (!confirm(t('toolbar.confirmClear'))) return;
     useStore.getState().clearCanvas();
@@ -119,6 +183,7 @@ export default function Toolbar() {
 
       <div className="flex items-center gap-0">
         <TB icon={FilePlus} label={t('toolbar.newHint')} onClick={handleNew} />
+        <TB icon={LayoutTemplate} label="模板" onClick={() => setShowTemplateModal(true)} />
         <TB icon={FolderOpen} label={t('toolbar.loadHint')} onClick={handleLoad} />
         <TB icon={Save} label={t('toolbar.saveHint')} onClick={() => setShowSaveModal(true)} />
         <TB icon={Download} label={t('toolbar.exportHint')} onClick={handleExport} />
@@ -138,6 +203,7 @@ export default function Toolbar() {
 
       {showSaveModal && <SaveModal onSave={handleSave} onClose={() => setShowSaveModal(false)} />}
       {showLoadModal && <LoadModal onClose={() => setShowLoadModal(false)} />}
+      {showTemplateModal && <TemplateModal onClose={() => setShowTemplateModal(false)} />}
     </div>
   );
 }

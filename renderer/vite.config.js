@@ -1,4 +1,4 @@
-﻿import { defineConfig } from "vite";
+import { defineConfig } from "vite";
 import react from "@vitejs/plugin-react";
 import path from "path";
 
@@ -12,6 +12,9 @@ export default defineConfig({
   },
   server: {
     port: 5173,
+    host: '::',
+    allowedHosts: ['.trycloudflare.com', '.lhr.life', '.sslip.io'],
+    hmr: { overlay: false },
     proxy: {
       "/api": "http://localhost:3001",
       "/ws": {
@@ -23,5 +26,9 @@ export default defineConfig({
   build: {
     outDir: "../public",
     emptyOutDir: true,
+  },
+  test: {
+    environment: 'jsdom',
+    globals: true,
   },
 });

@@ -11,22 +11,74 @@ const ROOT_DIR = path.resolve(__dirname, "..");
 let mainWindow = null;
 let backendProcess = null;
 
+const DEV_PORT = process.env.DEV_PORT || "5173";
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1440, height: 900, minWidth: 1024, minHeight: 680,
     title: "Local Canvas", backgroundColor: "#1a1b1e",
+    show: !app.isPackaged,
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
       nodeIntegration: false, contextIsolation: true,
     },
   });
 
-  // Disable default Electron menu so Ctrl+S/Ctrl+E pass through to the app
-  Menu.setApplicationMenu(null);
+  // 等页面加载完再显示窗口，避免白屏闪烁
+  mainWindow.once("ready-to-show", () => {
+    mainWindow.show();
+  });
+
+  // 超时后备：5 秒后强制显示窗口，避免白屏卡死
+  setTimeout(() => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  }, 5000);
+
+  // 页面加载失败时也显示窗口
+  mainWindow.webContents.on("did-fail-load", () => {
+    if (mainWindow && !mainWindow.isVisible()) {
+      mainWindow.show();
+    }
+  });
+
+  // 保留 File > Exit 菜单，方便用户关闭窗口
+  const template = [
+    ...(process.platform === 'darwin' ? [{ role: 'appMenu' }] : []),
+    { label: 'File', submenu: [
+      { role: 'quit', label: 'Exit' }
+    ]},
+    { label: 'View', submenu: [
+      { role: 'reload', label: 'Reload' },
+      { role: 'forceReload', label: 'Force Reload' },
+      { role: 'resetZoom' },
+      { role: 'zoomIn' },
+      { role: 'zoomOut' }
+    ]}
+  ];
+  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
+
+  // 彻底禁用 DevTools（覆写方法，任何调用都无效）
+  mainWindow.webContents.openDevTools = () => {};
+
+  // 拦截 DevTools 快捷键 (F12 / Ctrl+Shift+I / Ctrl+Shift+J)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12' ||
+        (input.control && input.shift && (input.key.toLowerCase() === 'i' || input.key.toLowerCase() === 'j'))) {
+      event.preventDefault();
+    }
+  });
+
+  // 万一 DevTools 还是打开了，立刻关掉
+  mainWindow.webContents.on('devtools-opened', () => {
+    mainWindow.webContents.closeDevTools();
+  });
 
   if (!app.isPackaged) {
-    mainWindow.loadURL("http://localhost:5173");
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    mainWindow.loadURL("http://localhost:" + DEV_PORT);
+    // 发布前去掉这行注释，开发时保留：
+    // mainWindow.webContents.openDevTools({ mode: "detach" });
   } else {
     mainWindow.loadFile(path.join(ROOT_DIR, "public", "index.html"));
   }
@@ -45,7 +97,7 @@ function startBackend() {
     backendProcess = spawn(nodeCmd, [backendPath], {
       cwd: ROOT_DIR,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PORT: "3001", HOST: "0.0.0.0" },
+      env: { ...process.env, PORT: "3001", HOST: "127.0.0.1" },
     });
 
     backendProcess.stdout.on("data", (d) => console.log("[backend]", d.toString().trim()));

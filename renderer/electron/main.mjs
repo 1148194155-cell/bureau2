@@ -1,11 +1,11 @@
-import { app, BrowserWindow, Menu } from "electron";
+﻿import { app, BrowserWindow, Menu } from "electron";
 import { spawn } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import http from "node:http";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const ROOT_DIR = path.resolve(__dirname, "..");
+const ROOT_DIR = path.resolve(__dirname, "..", "..");
 
 let mainWindow = null;
 let backendProcess = null;
@@ -22,7 +22,7 @@ function createWindow() {
 
   if (!app.isPackaged) {
     mainWindow.loadURL("http://localhost:5173");
-    mainWindow.webContents.openDevTools({ mode: "detach" });
+    // DevTools disabled - open manually with Ctrl+Shift+I in the Electron window if needed
   } else {
     mainWindow.loadFile(path.join(ROOT_DIR, "public", "index.html"));
   }
@@ -37,7 +37,7 @@ function startBackend() {
     backendProcess = spawn("node", [backendPath], {
       cwd: ROOT_DIR,
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, PORT: "3001", HOST: "0.0.0.0" },
+      env: { ...process.env, PORT: "3001", HOST: "127.0.0.1" },
     });
 
     backendProcess.stdout.on("data", (d) => console.log("[backend]", d.toString().trim()));

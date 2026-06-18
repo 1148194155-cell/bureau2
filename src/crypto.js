@@ -2,12 +2,13 @@ import crypto from 'node:crypto';
 import path from 'node:path';
 import fs from 'fs-extra';
 import os from 'node:os';
+import { config } from './config.js';
 
 const ALGORITHM = 'aes-256-gcm';
 const KEY_LENGTH = 32;
 
 function deriveKey() {
-  const envKey = process.env.LC_MASTER_KEY;
+  const envKey = config.crypto.masterKeyEnv;
   if (envKey) {
     return crypto.scryptSync(envKey, 'localcanvas-salt', KEY_LENGTH);
   }

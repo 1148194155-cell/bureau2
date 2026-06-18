@@ -12,6 +12,11 @@ export default function AIChat() {
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedModel, setSelectedModel] = useState("");
+  const [showAddModel, setShowAddModel] = useState(false);
+  const [newModelForm, setNewModelForm] = useState({
+    name: '', adapter_type: 'openai', endpoint: '', apiKey: '', model: ''
+  });
+  const [addingModel, setAddingModel] = useState(false);
   const [chatTitle, setChatTitle] = useState(t('chat.title'));
   const [builtinReady, setBuiltinReady] = useState(false);
   const messagesEndRef = useRef(null);
@@ -103,7 +108,7 @@ export default function AIChat() {
                     const msg = JSON.parse(e.data);
                     if (msg.type === "log") s.addExecutionLog(msg.data);
                     else if (msg.type === "complete") { s.setExecutionStatus("completed"); s.addExecutionLog({ level: "info", message: "执行完成" }); }
-                    else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); }
+                    else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); addChatMessage({ role: "system", content: `❌ 执行失败: ${msg.error}` }); }
                   };
                   addChatMessage({ role: "system", content: t('chat.aiTriggered') });
                 } catch (err) {
@@ -123,7 +128,7 @@ export default function AIChat() {
                   const wf = await loadWorkflow(action.payload.workflow_id);
                   if (wf) {
                     useStore.getState().clearCanvas();
-                    wf.nodes.forEach((n) => useStore.getState().addNode(n.type, n.data, n.position));
+                    wf.nodes.forEach((n) => useStore.getState().addNode(n.type, { ...n.data, nodeId: undefined }, n.position));
                     useStore.setState({ edges: wf.edges || [] });
                     addChatMessage({ role: "system", content: `✅ 已加载: ${wf.name}` });
                   }
@@ -153,7 +158,10 @@ export default function AIChat() {
               break;
             case "add_model":
               createModel(action.payload)
-                .then(() => addChatMessage({ role: "system", content: "✅ 模型已添加" }))
+                .then(() => {
+                  const note = action.note || '';
+                  addChatMessage({ role: "system", content: `✅ 模型已添加${note ? '。' + note : ''}` });
+                })
                 .catch((err) => addChatMessage({ role: "system", content: `❌ 添加失败: ${err.message}` }));
               break;
             case "delete_model":
@@ -190,6 +198,75 @@ export default function AIChat() {
               useStore.getState().setNavigateToPage("settings");
               addChatMessage({ role: "system", content: "正在切换到设置页面" });
               break;
+            case "rename_node":
+              {
+                const s = useStore.getState();
+                const node = s.nodes.find(n => (n.data?.label || '').includes(action.payload.node_label));
+                if (node) {
+                  s.updateNodeData(node.id, { ...node.data, label: action.payload.new_label });
+                  addChatMessage({ role: "system", content: `✅ 节点已重命名为 "${action.payload.new_label}"` });
+                } else {
+                  addChatMessage({ role: "system", content: `❌ 未找到节点 "${action.payload.node_label}"` });
+                }
+              }
+              break;
+            case "move_node":
+              {
+                const s = useStore.getState();
+                const node = s.nodes.find(n => (n.data?.label || '').includes(action.payload.node_label));
+                if (node && action.payload.position) {
+                  s.onNodesChange([{ id: node.id, type: 'position', position: action.payload.position }]);
+                  addChatMessage({ role: "system", content: `✅ 节点 "${action.payload.node_label}" 已移动` });
+                }
+              }
+              break;
+            case "delete_edge":
+              {
+                const s = useStore.getState();
+                const edge = s.edges.find(e => e.source === action.payload.source && e.target === action.payload.target);
+                if (edge) {
+                  s.onEdgesChange([{ id: edge.id, type: 'remove' }]);
+                  addChatMessage({ role: "system", content: "✅ 连线已删除" });
+                } else {
+                  addChatMessage({ role: "system", content: "❌ 未找到对应连线" });
+                }
+              }
+              break;
+            case "insert_node_between":
+              {
+                const s = useStore.getState();
+                const edge = s.edges.find(e => e.source === action.payload.source && e.target === action.payload.target);
+                if (!edge) { addChatMessage({ role: "system", content: "❌ 未找到要插入位置的两个节点之间的连线" }); break; }
+                // Calculate midpoint position
+                const srcNode = s.nodes.find(n => n.id === edge.source);
+                const tgtNode = s.nodes.find(n => n.id === edge.target);
+                const midX = srcNode && tgtNode ? (srcNode.position.x + tgtNode.position.x) / 2 : 400;
+                const midY = srcNode && tgtNode ? (srcNode.position.y + tgtNode.position.y) / 2 : 200;
+                const newId = `ai_ins_${Date.now()}`;
+                s.addNode(action.payload.node_type, { label: action.payload.label || action.payload.node_type, config: {} }, { x: midX, y: midY });
+                // Wait for React state, then reconnect
+                setTimeout(() => {
+                  const st = useStore.getState();
+                  const inserted = st.nodes.find(n => n.id === newId || st.nodes[st.nodes.length - 1]);
+                  if (inserted) {
+                    st.onEdgesChange([{ id: edge.id, type: 'remove' }]);
+                    st.onConnect({ source: edge.source, target: inserted.id, id: `ai_e1_${Date.now()}` });
+                    st.onConnect({ source: inserted.id, target: edge.target, id: `ai_e2_${Date.now()}` });
+                  }
+                }, 200);
+                addChatMessage({ role: "system", content: `✅ 已在节点间插入 "${action.payload.label || action.payload.node_type}" 节点` });
+              }
+              break;
+            case "change_node_type":
+              {
+                const s = useStore.getState();
+                const node = s.nodes.find(n => (n.data?.label || '').includes(action.payload.node_label));
+                if (node) {
+                  s.updateNodeData(node.id, { ...node.data, type: action.payload.new_type });
+                  addChatMessage({ role: "system", content: `✅ 节点类型已改为 "${action.payload.new_type}"` });
+                }
+              }
+              break;
         }
       }
     }
@@ -218,6 +295,12 @@ export default function AIChat() {
           <option value="">{t('chat.defaultModel')}</option>
           {models.map((m) => (<option key={m.id} value={m.id}>{m.name}</option>))}
         </select>
+        <button onClick={() => setShowAddModel(!showAddModel)}
+          className="w-5 h-5 flex items-center justify-center rounded-md text-surface-500 hover:text-accent-400 hover:bg-accent-500/10 transition-colors"
+          title="添加模型"
+        >
+          {showAddModel ? '×' : '+'}
+        </button>
         <button onClick={() => { clearChat(); addChatMessage({ role: "assistant", content: t('chat.greeting') }); }}
           className="w-6 h-6 flex items-center justify-center rounded-md text-surface-500 hover:text-surface-300 transition-colors" title={t('chat.newChat')}>
           <Plus size={12} />
@@ -226,6 +309,51 @@ export default function AIChat() {
           <Trash2 size={11} />
         </button>
       </div>
+
+      {showAddModel && (
+        <div className="px-3 py-2 border-b border-surface-700/40 bg-surface-800/50 space-y-1.5">
+          <div className="flex items-center gap-2">
+            <select value={newModelForm.adapter_type} onChange={e => { const type = e.target.value; const presets = { openai: { endpoint: 'https://api.openai.com/v1', model: 'gpt-4o' }, ollama: { endpoint: 'http://localhost:11434/v1', model: 'qwen2.5:7b' }, anthropic: { endpoint: 'https://api.anthropic.com/v1', model: 'claude-sonnet-4-20250514' } }; setNewModelForm({ ...newModelForm, adapter_type: type, endpoint: presets[type]?.endpoint || '', model: presets[type]?.model || '' }); }}
+              className="h-6 px-1 rounded bg-surface-700 border border-surface-600 text-[10px] text-surface-300">
+              <option value="openai">OpenAI</option>
+              <option value="ollama">Ollama</option>
+              <option value="anthropic">Anthropic</option>
+            </select>
+            <input value={newModelForm.endpoint} onChange={e => setNewModelForm({ ...newModelForm, endpoint: e.target.value })} placeholder="API 端点" className="flex-1 h-6 px-2 rounded bg-surface-700 border border-surface-600 text-[10px] text-surface-200 placeholder-surface-600" />
+            <input value={newModelForm.model} onChange={e => setNewModelForm({ ...newModelForm, model: e.target.value })} placeholder="模型 ID" className="w-28 h-6 px-2 rounded bg-surface-700 border border-surface-600 text-[10px] text-surface-200 placeholder-surface-600" />
+          </div>
+          <div className="flex items-center gap-2">
+            <input type="password" value={newModelForm.apiKey} onChange={e => setNewModelForm({ ...newModelForm, apiKey: e.target.value })} placeholder="API Key (sk-...)" className="flex-1 h-6 px-2 rounded bg-surface-700 border border-surface-600 text-[10px] text-surface-200 placeholder-surface-600" />
+            <button
+              onClick={async () => {
+                const f = newModelForm;
+                if (!f.endpoint || !f.model) return toast.error('端点地址和模型 ID 必填');
+                setAddingModel(true);
+                try {
+                  const result = await createModel({
+                    name: f.model,
+                    adapter_type: f.adapter_type,
+                    config: { endpoint: f.endpoint, apiKey: f.apiKey, model: f.model }
+                  });
+                  const { fetchModels } = await import('../api/api');
+                  const modelsList = await fetchModels();
+                  useStore.getState().setModels(modelsList);
+                  setSelectedModel(result.id);
+                  setShowAddModel(false);
+                  setNewModelForm({ name: '', adapter_type: 'openai', endpoint: '', apiKey: '', model: '' });
+                  toast.success('模型已添加并选中');
+                } catch (err) {
+                  toast.error(err.message || '添加失败');
+                } finally { setAddingModel(false); }
+              }}
+              disabled={addingModel}
+              className="h-6 px-3 rounded bg-accent-600 hover:bg-accent-500 disabled:bg-surface-700 text-surface-950 text-[10px] font-medium shrink-0"
+            >
+              {addingModel ? '...' : '保存'}
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2.5">
         {chatMessages.length === 0 && (

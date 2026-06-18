@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback } from "react";
-import { FlaskConical, Globe, Brain, Plug, RefreshCw, GripHorizontal, FileOutput, Pencil, Code, GitFork } from "lucide-react";
+import { FlaskConical, Globe, Brain, Plug, RefreshCw, GripHorizontal, FileOutput, Pencil, Code, GitFork, Workflow } from "lucide-react";
 import toast from "react-hot-toast";
 import useStore from "../store/store";
 import { fetchSkills, fetchModels, fetchApis, fetchKnowledgeBases } from "../api/api";
@@ -210,6 +210,17 @@ export default function ResourcePanel() {
             <span className="text-xs font-medium text-surface-200 truncate flex-1">{t('resource.conditionNode')}</span>
           </div>
           <div className="text-[10px] text-surface-500 truncate mt-0.5 ml-[22px]">{t('resource.conditionNodeDesc')}</div>
+        </div>
+
+        {/* Workflow node (sub-workflow) */}
+        <div draggable onDragStart={(e) => { e.dataTransfer.setData("application/reactflow", JSON.stringify({ nodeType: "workflow", data: { name: "子流程", desc: "嵌入已有工作流作为子流程", id: "builtin:workflow" } })); e.dataTransfer.effectAllowed = "move"; }}
+          className="px-2.5 py-2 rounded-xl bg-surface-800/50 border border-surface-700/30 cursor-grab active:cursor-grabbing hover:border-violet-500/40 hover:bg-surface-750/50 transition-all group mt-1">
+          <div className="flex items-center gap-1.5">
+            <GripHorizontal size={10} className="text-surface-600 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="w-5 h-5 rounded-md bg-violet-500/10 flex items-center justify-center shrink-0"><Workflow size={11} className="text-violet-400" /></div>
+            <span className="text-xs font-medium text-surface-200 truncate flex-1">子流程</span>
+          </div>
+          <div className="text-[10px] text-surface-500 truncate mt-0.5 ml-[22px]">嵌入已有工作流作为子流程</div>
         </div>
 
         <div className="w-full h-px bg-surface-700/30 my-1" />

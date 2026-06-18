@@ -4,18 +4,18 @@ title Local Canvas
 cd /d "%~dp0"
 
 where node >nul 2>&1
-if %errorlevel% neq 0 (echo Node.js 未安装！https://nodejs.org && pause && exit /b 1)
+if %errorlevel% neq 0 (echo Node.js is not installed. https://nodejs.org && pause && exit /b 1)
 
 if not exist "node_modules" (
-    echo 正在安装依赖（首次运行需等待）...
+    echo Installing dependencies (first run)...
     call npm install
     echo.
 )
 
-echo 后端: http://localhost:3001
-echo 前端: http://localhost:5173
+echo Backend: http://localhost:3001
+echo Frontend: http://localhost:5173
 
-start "Backend" cmd /c "cd /d %~dp0 && node src/index.js"
-start "Frontend" cmd /c "cd /d %~dp0\renderer && npm run dev"
-echo 浏览器打开 http://localhost:5173
+start "" /B node src/index.js > backend_output.log 2>&1
+start "" /B node_portable\npx.cmd vite --cwd renderer > frontend_output.log 2>&1
+echo Browser will open at http://localhost:5173
 exit

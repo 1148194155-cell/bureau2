@@ -238,15 +238,31 @@ export async function indexKnowledgeBase(db, knowledgeBaseId, folderPath, embedF
 
   for (const filePath of files) {
     try {
-      const content = await fs.readFile(filePath, 'utf8');
-      // Simple chunking: split into ~500-char chunks with overlap
+      const ext = path.extname(filePath).toLowerCase();
+      let content;
+
+      if (ext === '.pdf') {
+        content = await extractPdfText(filePath);
+      } else if (ext === '.docx') {
+        content = await extractDocxText(filePath);
+      } else if (ext === '.xlsx' || ext === '.xls') {
+        content = await extractXlsxText(filePath);
+      } else if (ext === '.html' || ext === '.htm') {
+        const raw = await fs.readFile(filePath, 'utf8');
+        content = stripHtml(raw);
+      } else {
+        content = await fs.readFile(filePath, 'utf8');
+      }
+
+      if (!content || !content.trim()) continue;
+
       const chunks = chunkText(content, 500, 50);
       for (let i = 0; i < chunks.length; i++) {
         allTexts.push(chunks[i]);
         allMetadata.push({ filePath, chunkIndex: i });
       }
-    } catch {
-      console.warn(`[Scanner] Failed to read knowledge file: ${filePath}`);
+    } catch (err) {
+      console.warn(`[Scanner] Failed to read knowledge file: ${filePath} — ${err.message}`);
     }
   }
 
@@ -292,7 +308,7 @@ export async function indexKnowledgeBase(db, knowledgeBaseId, folderPath, embedF
 // --- Helpers ---
 
 /**
- * Recursively collect text files from a directory.
+ * Recursively collect text and document files from a directory.
  * @param {string} dir - Directory to scan
  * @param {string[]} result - Accumulator array for file paths
  */
@@ -304,21 +320,21 @@ async function collectTextFiles(dir, result) {
       if (!entry.name.startsWith('.')) {
         await collectTextFiles(fullPath, result);
       }
-    } else if (isTextExtension(entry.name)) {
+    } else if (isSupportedFile(entry.name)) {
       result.push(fullPath);
     }
   }
 }
 
 /**
- * Check if a filename has a text extension.
- * @param {string} filename
- * @returns {boolean}
+ * Check if a filename is a supported text or document format.
  */
-function isTextExtension(filename) {
+function isSupportedFile(filename) {
   const ext = path.extname(filename).toLowerCase();
-  return ['.txt', '.md', '.json', '.yaml', '.yml', '.js', '.py', '.html',
-    '.css', '.xml', '.csv', '.log', '.sh', '.env', '.cfg', '.ini', '.toml'
+  return [
+    '.txt', '.md', '.json', '.yaml', '.yml', '.js', '.py', '.html', '.htm',
+    '.css', '.xml', '.csv', '.log', '.sh', '.env', '.cfg', '.ini', '.toml',
+    '.pdf', '.docx', '.xlsx', '.xls',
   ].includes(ext);
 }
 
@@ -361,5 +377,75 @@ export function chunkText(text, chunkSize, overlap) {
   return chunks;
 }
 
-export default { scanSkills, scanModels, scanApis, indexKnowledgeBase, chunkText };
+// ── Document Format Parsers ──
+
+/**
+ * Extract text from a PDF file.
+ */
+async function extractPdfText(filePath) {
+  let pdfParse;
+  try {
+    pdfParse = (await import('pdf-parse')).default;
+  } catch {
+    throw new Error('pdf-parse not installed. Run: npm install pdf-parse');
+  }
+  const buffer = await fs.readFile(filePath);
+  const data = await pdfParse(buffer);
+  return data.text || '';
+}
+
+/**
+ * Extract text from a DOCX file.
+ */
+async function extractDocxText(filePath) {
+  let mammoth;
+  try {
+    mammoth = (await import('mammoth')).default;
+  } catch {
+    throw new Error('mammoth not installed. Run: npm install mammoth');
+  }
+  const buffer = await fs.readFile(filePath);
+  const result = await mammoth.extractRawText({ buffer });
+  return result.value || '';
+}
+
+/**
+ * Extract text from an Excel file (xlsx/xls).
+ */
+async function extractXlsxText(filePath) {
+  let XLSX;
+  try {
+    XLSX = (await import('xlsx')).default;
+  } catch {
+    throw new Error('xlsx not installed. Run: npm install xlsx');
+  }
+  const buffer = await fs.readFile(filePath);
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const sheets = workbook.SheetNames.map(name => {
+    const sheet = workbook.Sheets[name];
+    return XLSX.utils.sheet_to_csv(sheet);
+  });
+  return sheets.join('\n\n--- Sheet ---\n\n');
+}
+
+/**
+ * Strip HTML tags and extract readable text.
+ */
+function stripHtml(html) {
+  return html
+    .replace(/<style[^>]*>[\s\S]*?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]*?<\/script>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&quot;/g, '"')
+    .replace(/&#x27;/g, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(parseInt(n)))
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\s{2,}/g, '\n')
+    .trim();
+}
+
+export default { scanSkills, scanModels, scanApis, indexKnowledgeBase, chunkText, extractPdfText, extractDocxText, stripHtml };
 

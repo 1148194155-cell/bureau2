@@ -51,15 +51,13 @@ echo   Frontend : http://localhost:5173
 echo ============================
 echo.
 
-start "Local Canvas - Backend" cmd /c "cd /d %~dp0 && title Backend && node src/index.js"
-start "Local Canvas - Frontend" cmd /c "cd /d %~dp0\renderer && title Frontend && ..\node_portable\npx.cmd vite"
+start "" /B node src/index.js > backend_output.log 2>&1
+start "" /B node_portable\npx.cmd vite --cwd renderer > frontend_output.log 2>&1
 
-echo 正在等待后端就绪...
-:wait_backend
-powershell -Command "try { (Invoke-WebRequest -Uri http://localhost:3001/api/health -TimeoutSec 2).StatusCode } catch { exit 1 }" >nul 2>&1
-if %errorlevel% neq 0 (
-    timeout /t 1 /nobreak >nul
-    goto wait_backend
+node -e "require('http').get('http://localhost:3001/api/health',r=>{process.exit(r.statusCode===200?0:1)}).on('error',()=>process.exit(1)).setTimeout(3000,()=>process.exit(1))" >nul 2>&1
+if errorlevel 1 (
+  timeout /t 1 /nobreak >nul
+  goto wait_backend
 )
 start http://localhost:5173
 echo 浏览器已打开。

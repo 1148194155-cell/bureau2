@@ -2,6 +2,7 @@ import Database from 'better-sqlite3';
 import path from 'node:path';
 import os from 'node:os';
 import fs from 'fs-extra';
+import { config } from './config.js';
 
 const DB_DIR = path.join(os.homedir(), '.localcanvas');
 const DB_PATH = path.join(DB_DIR, 'localcanvas.db');
@@ -149,6 +150,22 @@ export function initDatabase() {
       version TEXT DEFAULT '1.0.0',
       discovered_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
+
+    -- Cron-based workflow schedules
+    CREATE TABLE IF NOT EXISTS workflow_schedules (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      workflow_id INTEGER NOT NULL,
+      cron_expression TEXT NOT NULL,
+      enabled BOOLEAN NOT NULL DEFAULT 1,
+      last_run DATETIME,
+      next_run DATETIME,
+      user_id INTEGER NOT NULL DEFAULT 1,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+      FOREIGN KEY (user_id) REFERENCES users(id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_workflow_schedules_enabled ON workflow_schedules(enabled);
   `);
 
   // Seed a default user if none exists (single-user mode)
@@ -164,6 +181,27 @@ export function initDatabase() {
 
   const migrations = [
     // version 1: initial schema (already created above)
+    { version: 2, sql: "ALTER TABLE executions ADD COLUMN results TEXT" },
+    { version: 3, sql: "ALTER TABLE executions ADD COLUMN input_data TEXT" },
+    {
+      version: 4,
+      sql: `
+        CREATE TABLE IF NOT EXISTS workflow_schedules (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          workflow_id INTEGER NOT NULL,
+          cron_expression TEXT NOT NULL,
+          enabled BOOLEAN NOT NULL DEFAULT 1,
+          last_run DATETIME,
+          next_run DATETIME,
+          user_id INTEGER NOT NULL DEFAULT 1,
+          created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+          FOREIGN KEY (workflow_id) REFERENCES workflows(id) ON DELETE CASCADE,
+          FOREIGN KEY (user_id) REFERENCES users(id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_workflow_schedules_enabled ON workflow_schedules(enabled);
+      `,
+    },
   ];
 
   for (const m of migrations) {
@@ -181,11 +219,81 @@ export function initDatabase() {
 /**
  * Get the database instance. Call initDatabase() first.
  */
+/**
+ * Clean up old execution records to prevent unlimited DB growth.
+ * @param {number} keepExecutions - max execution records to retain (default 1000)
+ * @param {number} keepLogs - max log entries to retain (default 10000)
+ */
+export function cleanupOldRecords(keepExecutions = config.db.cleanup.keepExecutions, keepLogs = config.db.cleanup.keepLogs) {
+  try {
+    const db = getDb();
+    const execCount = db.prepare('SELECT COUNT(*) as c FROM executions').get()?.c || 0;
+    if (execCount > keepExecutions) {
+      const cutoff = db.prepare('SELECT id FROM executions ORDER BY start_time DESC LIMIT 1 OFFSET ?').get(keepExecutions);
+      if (cutoff) {
+        db.prepare("DELETE FROM execution_logs WHERE execution_id IN (SELECT id FROM executions WHERE start_time <= (SELECT start_time FROM executions WHERE id = ?))").run(cutoff.id);
+        const deleted = db.prepare("DELETE FROM executions WHERE start_time <= (SELECT start_time FROM executions WHERE id = ?)").run(cutoff.id);
+        console.log(`[DB] Cleaned ${deleted.changes} old execution records (kept ${keepExecutions})`);
+      }
+    }
+    const logCount = db.prepare('SELECT COUNT(*) as c FROM execution_logs').get()?.c || 0;
+    if (logCount > keepLogs) {
+      const cutoffLog = db.prepare('SELECT id FROM execution_logs ORDER BY timestamp DESC LIMIT 1 OFFSET ?').get(keepLogs);
+      if (cutoffLog) {
+        const deletedLogs = db.prepare('DELETE FROM execution_logs WHERE id <= ?').run(cutoffLog.id);
+        console.log(`[DB] Cleaned ${deletedLogs.changes} old log entries (kept ${keepLogs})`);
+      }
+    }
+  } catch (e) { /* non-critical */ }
+}
+
 export function getDb() {
   if (!db) {
     throw new Error('Database not initialized. Call initDatabase() first.');
   }
   return db;
+}
+
+/**
+ * Create a daily backup of the SQLite database.
+ * Uses better-sqlite3's native backup API for a consistent snapshot
+ * without needing to acquire exclusive locks.
+ * Backups older than keepDays (default 30) are pruned.
+ */
+export function backupDatabase(keepDays = 30) {
+  const backupDir = config.db.backupDir;
+  fs.ensureDirSync(backupDir);
+
+  const now = new Date();
+  const dateStr = now.toISOString().slice(0, 10); // YYYY-MM-DD
+  const backupPath = path.join(backupDir, `localcanvas-${dateStr}.db`);
+
+  // Skip if today's backup already exists
+  if (fs.existsSync(backupPath)) {
+    return backupPath;
+  }
+
+  try {
+    const source = getDb();
+    source.backup(backupPath);
+    console.log(`[DB] Backed up to ${backupPath}`);
+
+    // Prune backups older than keepDays
+    const cutoff = Date.now() - keepDays * 24 * 60 * 60 * 1000;
+    const files = fs.readdirSync(backupDir)
+      .filter(f => f.startsWith('localcanvas-') && f.endsWith('.db'))
+      .map(f => ({ name: f, path: path.join(backupDir, f), mtime: fs.statSync(path.join(backupDir, f)).mtimeMs }))
+      .filter(f => f.mtime < cutoff);
+    for (const f of files) {
+      fs.removeSync(f.path);
+      console.log(`[DB] Pruned old backup: ${f.name}`);
+    }
+
+    return backupPath;
+  } catch (err) {
+    console.error(`[DB] Backup failed: ${err.message}`);
+    return null;
+  }
 }
 
 /**

@@ -18,16 +18,23 @@ const CANVAS_TOOLS = [
   { type: 'function', function: { name: 'run_workflow', description: 'Execute the workflow on the current canvas', parameters: { type: 'object', properties: {} } } },
   { type: 'function', function: { name: 'clear_canvas', description: 'Clear all nodes and connections from the canvas', parameters: { type: 'object', properties: {} } } },
 
+  // Incremental modifications (for "改一下第3步" style edits)
+  { type: 'function', function: { name: 'rename_node', description: 'Rename a specific node on the canvas (find by label or index)', parameters: { type: 'object', properties: { node_label: { type: 'string', description: 'Current label of the node to rename (fuzzy match supported)' }, new_label: { type: 'string', description: 'New label for the node' } }, required: ['node_label', 'new_label'] } } },
+  { type: 'function', function: { name: 'move_node', description: 'Move a node to a different position', parameters: { type: 'object', properties: { node_label: { type: 'string', description: 'Label of the node to move' }, position_x: { type: 'number' }, position_y: { type: 'number' } }, required: ['node_label', 'position_x', 'position_y'] } } },
+  { type: 'function', function: { name: 'delete_edge', description: 'Delete a connection (edge) between two nodes', parameters: { type: 'object', properties: { source_node_id: { type: 'string' }, target_node_id: { type: 'string' } }, required: ['source_node_id', 'target_node_id'] } } },
+  { type: 'function', function: { name: 'insert_node_between', description: 'Insert a new node between two connected nodes', parameters: { type: 'object', properties: { source_node_id: { type: 'string' }, target_node_id: { type: 'string' }, node_type: { type: 'string', enum: ['model', 'code', 'condition', 'api_caller'] }, label: { type: 'string' } }, required: ['source_node_id', 'target_node_id', 'node_type'] } } },
+  { type: 'function', function: { name: 'change_node_type', description: 'Change the type of a node (e.g. model→code)', parameters: { type: 'object', properties: { node_label: { type: 'string' }, new_type: { type: 'string', enum: ['model', 'code', 'condition', 'input', 'output', 'api_caller'] } }, required: ['node_label', 'new_type'] } } },
+  { type: 'function', function: { name: 'get_node_config', description: 'Read the full configuration of a specific node (find by label or ID). Use before modifying a node to see current settings.', parameters: { type: 'object', properties: { node_label: { type: 'string', description: 'Label or ID of the node to inspect' } }, required: ['node_label'] } } },
+
   // Workflow management
   { type: 'function', function: { name: 'load_workflow', description: 'Load a saved workflow onto the canvas', parameters: { type: 'object', properties: { workflow_id: { type: 'number', description: 'Workflow ID' }, workflow_name: { type: 'string', description: 'Workflow name (optional)' } }, required: ['workflow_id'] } } },
   { type: 'function', function: { name: 'export_workflow', description: 'Export the current canvas as a JSON file', parameters: { type: 'object', properties: {} } } },
 
   // Model management
   { type: 'function', function: { name: 'list_models', description: 'List all configured AI models', parameters: { type: 'object', properties: {} } } },
-  { type: 'function', function: { name: 'add_model', description: 'Add a new AI model configuration', parameters: { type: 'object', properties: { name: { type: 'string' }, adapter_type: { type: 'string', enum: ['openai', 'ollama', 'anthropic'] }, endpoint: { type: 'string', description: 'API endpoint URL' }, model: { type: 'string', description: 'Model ID' }, api_key: { type: 'string', description: 'API key' } }, required: ['name', 'adapter_type', 'endpoint', 'model'] } } },
+  { type: 'function', function: { name: 'add_model', description: 'Add a new AI model configuration (API key must be entered separately in Settings for security)', parameters: { type: 'object', properties: { name: { type: 'string' }, adapter_type: { type: 'string', enum: ['openai', 'ollama', 'anthropic'] }, endpoint: { type: 'string', description: 'API endpoint URL' }, model: { type: 'string', description: 'Model ID' } }, required: ['name', 'adapter_type', 'endpoint', 'model'] } } },
 
-  // API Key
-  { type: 'function', function: { name: 'add_api_key', description: 'Save an API key', parameters: { type: 'object', properties: { name: { type: 'string' }, api_key: { type: 'string' } }, required: ['name', 'api_key'] } } },
+  // API Key — 移除: Key 不应经过 AI 模型传输，请在设置页面直接输入以保证安全
 
   // Knowledge base
   { type: 'function', function: { name: 'add_knowledge_base', description: 'Add a knowledge base', parameters: { type: 'object', properties: { name: { type: 'string' }, folder_path: { type: 'string', description: 'Document folder path' } }, required: ['name', 'folder_path'] } } },
@@ -55,15 +62,17 @@ function buildSystemPrompt(lang) {
 规则：
 - 问候和简单问题直接回复，不要调用工具
 - 只在用户明确要求操作时才调用工具
-- 一次调用一个工具，等结果再决定下一步`
+- 复杂操作（如"在步骤2和3之间插入翻译节点"）需要多步操作：先 get_node_config 查看当前状态，再逐步执行
+- 修改节点前先用 get_node_config 查看当前配置，再精确修改`
     : `You are the AI assistant for Local Canvas, a visual AI workflow builder.
 
 You can operate the canvas, manage models and knowledge bases, and read/write local files.
 
 Rules:
-- For greetings and simple questions, respond directly in English without calling tools
+- For greetings and simple questions, respond directly without tools
 - Only call tools when the user explicitly asks for an action
-- Call one tool at a time, wait for the result before deciding the next step`;
+- For complex operations (e.g. "insert a translation node between step 2 and 3"), use multiple steps: first get_node_config to check state, then execute
+- Before modifying a node, use get_node_config to see its current config, then apply precise changes`;
 }
 
 /**
@@ -79,97 +88,130 @@ Rules:
  * @returns {Promise<{reply:string, actions:Array}>}
  */
 export async function handleChatMessage({ message, history, canvasState, adapter, userId, db, lang }) {
-  // 1. Build the messages array
+  // 1. Build the base messages array
   const messages = [
     { role: 'system', content: buildSystemPrompt(lang || 'zh') },
-    ...history.slice(-20), // keep last 20 history entries
+    ...history.slice(-20),
     {
       role: 'user',
-      content: `Current canvas state:\nNodes: ${JSON.stringify(canvasState.nodes?.map(n => ({ id: n.id, type: n.type, label: n.data?.label, skillId: n.data?.skillId })) || [])}\nEdges: ${JSON.stringify(canvasState.edges?.map(e => ({ source: e.source, target: e.target })) || [])}\n\nUser message: ${message}`,
+      content: `Current canvas state:\nNodes: ${JSON.stringify(canvasState.nodes?.map(n => ({ id: n.id, type: n.type, label: n.data?.label, skillId: n.data?.skillId, modelId: n.data?.modelId, config: n.data?.config, code: n.data?.code })) || [])}\nEdges: ${JSON.stringify(canvasState.edges?.map(e => ({ id: e.id, source: e.source, target: e.target, mapping: e.data?.mapping })) || [])}\n\nUser message: ${message}`,
     },
   ];
 
-  // 2. Call the model with tools
-  const response = await adapter.chat(messages, {
-    temperature: 0.5,
-    max_tokens: 2048,
-    tools: CANVAS_TOOLS,
-    tool_choice: 'auto',
-    timeout: 180000,
-  });
+  // 2. Multi-step ReAct loop: iterate until no tool calls or max rounds
+  const allActions = [];
+  let finalReply = '';
+  const MAX_ROUNDS = 3;
 
-  // 3. Parse the response
-  const reply = response.content || '';
-  const toolCalls = response.tool_calls || [];
-
-  // 4. Separate tool calls: frontend-executable vs backend-internal
-  const actions = [];
-  const toolResults = [];
-
-  for (const tc of toolCalls) {
-    const name = tc.function?.name;
-    const args = parseToolArgs(tc);
-
-    if (name === 'read_file' || name === 'list_files' || name === 'search_files') {
-      // Backend executes file operations
-      try {
-        let result;
-        if (name === 'read_file') {
-          if (!isSafePath(args.file_path)) throw new Error('Access denied: path is outside allowed directories');
-          const content = fs.readFileSync(args.file_path, 'utf8');
-          result = { file: args.file_path, content: content.slice(0, 10000) };
-          if (content.length > 10000) result.truncated = true;
-        } else if (name === 'list_files') {
-          if (!isSafePath(args.dir_path)) throw new Error('Access denied: path is outside allowed directories');
-          const entries = fs.readdirSync(args.dir_path, { withFileTypes: true });
-          result = entries.map(e => ({
-            name: e.name,
-            type: e.isDirectory() ? 'folder' : 'file',
-          }));
-        } else if (name === 'search_files') {
-          const dir = args.dir_path || os.homedir();
-          if (!isSafePath(dir)) throw new Error('Access denied: path is outside allowed directories');
-          result = searchFilesSync(dir, args.pattern, 2); // depth 2
-        }
-        toolResults.push({ id: tc.id, name, status: 'ok', result, truncated: !!result?.truncated });
-      } catch (err) {
-        toolResults.push({ id: tc.id, name, status: 'error', error: err.message });
-      }
-    } else {
-      // Frontend-executable tools, convert to actions
-      const action = parseAction(name, args);
-      if (action) actions.push(action);
-    }
-  }
-
-  // 5. If there are backend execution results, feed them back to the model for final reply
-  if (toolResults.length > 0) {
-    const continuation = [...messages];
-    continuation.push({ role: 'assistant', content: reply, tool_calls: toolCalls });
-
-    for (const tr of toolResults) {
-      let resultStr = tr.status === 'ok'
-        ? JSON.stringify(tr.result)
-        : `error: ${tr.error}`;
-      // 如果结果被截断，告知模型
-      if (tr.truncated) resultStr += '\n[Note: output was truncated to 10000 characters]';
-      const content = tr.status === 'ok'
-        ? `Tool "${tr.name}" result: ${resultStr}`
-        : `Tool "${tr.name}" failed: ${tr.error}`;
-      continuation.push({ role: 'tool', content, tool_call_id: tr.id });
-    }
-
-    continuation.push({ role: 'user', content: 'Please respond to the user based on the above results.' });
-
-    const finalResponse = await adapter.chat(continuation, {
+  for (let round = 0; round < MAX_ROUNDS; round++) {
+    const response = await adapter.chat(messages, {
       temperature: 0.5,
       max_tokens: 2048,
+      tools: CANVAS_TOOLS,
+      tool_choice: 'auto',
       timeout: 180000,
     });
-    return { reply: finalResponse.content || reply, actions };
+
+    const reply = response.content || '';
+    const toolCalls = response.tool_calls || [];
+
+    // If no tool calls, this is the final reply
+    if (toolCalls.length === 0) {
+      finalReply = reply;
+      break;
+    }
+
+    // Separate frontend actions from backend tasks
+    const roundActions = [];
+    const backendTasks = [];
+
+    for (const tc of toolCalls) {
+      const name = tc.function?.name;
+      const args = parseToolArgs(tc);
+
+      if (name === 'read_file' || name === 'list_files' || name === 'search_files' || name === 'get_node_config') {
+        backendTasks.push({ tc, name, args });
+      } else {
+        const action = parseAction(name, args);
+        if (action) roundActions.push(action);
+      }
+    }
+
+    allActions.push(...roundActions);
+
+    // Execute backend tasks in parallel
+    const toolResults = [];
+    if (backendTasks.length > 0) {
+      const results = await Promise.allSettled(
+        backendTasks.map(async ({ tc, name, args }) => {
+          let result;
+          if (name === 'read_file') {
+            if (!isSafePath(args.file_path)) throw new Error('Access denied');
+            const content = fs.readFileSync(args.file_path, 'utf8');
+            result = { file: args.file_path, content: content.slice(0, 10000) };
+            if (content.length > 10000) result.truncated = true;
+          } else if (name === 'list_files') {
+            if (!isSafePath(args.dir_path)) throw new Error('Access denied');
+            const entries = fs.readdirSync(args.dir_path, { withFileTypes: true });
+            result = entries.map(e => ({ name: e.name, type: e.isDirectory() ? 'folder' : 'file' }));
+          } else if (name === 'search_files') {
+            const dir = args.dir_path || os.homedir();
+            if (!isSafePath(dir)) throw new Error('Access denied');
+            result = searchFilesSync(dir, args.pattern, 2);
+          } else if (name === 'get_node_config') {
+            const node = findNodeByLabel(canvasState.nodes, args.node_label);
+            if (!node) {
+              result = { error: `Node "${args.node_label}" not found on canvas` };
+            } else {
+              result = buildNodeConfigResult(node, canvasState.edges);
+            }
+          }
+          return { id: tc.id, name, status: 'ok', result, truncated: !!result?.truncated };
+        })
+      );
+
+      for (let i = 0; i < results.length; i++) {
+        const r = results[i];
+        const task = backendTasks[i];
+        if (r.status === 'fulfilled') {
+          toolResults.push(r.value);
+        } else {
+          toolResults.push({ id: task.tc.id, name: task.name, status: 'error', error: r.reason?.message || 'Unknown error' });
+        }
+      }
+    }
+
+    // If no backend tasks ran, we're done (frontend actions collected)
+    if (toolResults.length === 0) {
+      finalReply = reply;
+      break;
+    }
+
+    // Feed tool results back for next round
+    messages.push({ role: 'assistant', content: reply, tool_calls: toolCalls });
+
+    for (const tr of toolResults) {
+      let resultStr = tr.status === 'ok' ? JSON.stringify(tr.result) : `error: ${tr.error}`;
+      if (tr.truncated) resultStr += '\n[Note: output was truncated]';
+      const toolMsg = tr.status === 'ok'
+        ? `Tool "${tr.name}" result: ${resultStr}`
+        : `Tool "${tr.name}" failed: ${tr.error}`;
+      messages.push({ role: 'tool', content: toolMsg, tool_call_id: tr.id });
+    }
+
+    messages.push({ role: 'user', content: 'Continue based on the tool results. If done, reply without tools.' });
+
+    finalReply = reply;
   }
 
-  return { reply, actions };
+  // If no reply generated, provide a fallback
+  if (!finalReply && allActions.length > 0) {
+    finalReply = `已完成 ${allActions.length} 项操作。`;
+  } else if (!finalReply) {
+    finalReply = '我理解了，但我不知道如何操作。请更具体地描述你的需求。';
+  }
+
+  return { reply: finalReply, actions: allActions };
 }
 
 /**
@@ -285,15 +327,65 @@ function parseAction(name, args) {
     list_models: () => ({ type: 'list_models', payload: {} }),
     add_model: () => ({
       type: 'add_model',
-      payload: { name: args.name, adapter_type: args.adapter_type, config: { endpoint: args.endpoint, apiKey: args.api_key, model: args.model } },
+      payload: { name: args.name, adapter_type: args.adapter_type, config: { endpoint: args.endpoint, model: args.model } },
+      note: '⚠️ API Key 未设置 — 请在设置页面手动填入 Key 以激活模型',
     }),
-    add_api_key: () => ({ type: 'add_api_key', payload: { name: args.name, api_key: args.api_key } }),
+    // add_api_key removed — API Keys should only be entered in Settings page, never through AI chat
     add_knowledge_base: () => ({ type: 'add_knowledge_base', payload: { name: args.name, folder_path: args.folder_path } }),
     index_knowledge_base: () => ({ type: 'index_knowledge_base', payload: { kb_id: args.kb_id, model_id: args.model_id } }),
     navigate_to_settings: () => ({ type: 'navigate_to_settings', payload: {} }),
+    rename_node: () => ({ type: 'rename_node', payload: { node_label: args.node_label, new_label: args.new_label } }),
+    move_node: () => ({ type: 'move_node', payload: { node_label: args.node_label, position: { x: args.position_x, y: args.position_y } } }),
+    delete_edge: () => ({ type: 'delete_edge', payload: { source: args.source_node_id, target: args.target_node_id } }),
+    insert_node_between: () => ({ type: 'insert_node_between', payload: { source: args.source_node_id, target: args.target_node_id, node_type: args.node_type, label: args.label } }),
+    change_node_type: () => ({ type: 'change_node_type', payload: { node_label: args.node_label, new_type: args.new_type } }),
   };
   const fn = actionMap[name];
   return fn ? fn() : null;
+}
+
+/**
+ * Find a node by label (fuzzy match) or by ID.
+ */
+function findNodeByLabel(nodes, query) {
+  if (!nodes?.length || !query) return null;
+  // Exact ID match
+  const byId = nodes.find(n => n.id === query);
+  if (byId) return byId;
+  // Exact label match
+  const byLabel = nodes.find(n => (n.data?.label || '') === query);
+  if (byLabel) return byLabel;
+  // Case-insensitive contains match
+  const lowerQ = query.toLowerCase();
+  const fuzzy = nodes.find(n => (n.data?.label || '').toLowerCase().includes(lowerQ));
+  if (fuzzy) return fuzzy;
+  return null;
+}
+
+/**
+ * Build a human-readable summary of a node's configuration.
+ */
+function buildNodeConfigResult(node, edges) {
+  const connectedEdges = edges?.filter(e => e.source === node.id || e.target === node.id) || [];
+  const incoming = connectedEdges.filter(e => e.target === node.id).map(e => e.source);
+  const outgoing = connectedEdges.filter(e => e.source === node.id).map(e => e.target);
+
+  return {
+    id: node.id,
+    type: node.type || node.data?.type,
+    label: node.data?.label || '',
+    config: node.data?.config || {},
+    code: node.data?.code || undefined,
+    modelId: node.data?.modelId || node.data?.model_id || undefined,
+    skillId: node.data?.skillId || node.data?.skill_id || undefined,
+    input: node.data?.input || undefined,
+    position: node.position,
+    connections: {
+      incomingFrom: incoming,
+      outgoingTo: outgoing,
+      edgeCount: connectedEdges.length,
+    },
+  };
 }
 
 export default { handleChatMessage };
