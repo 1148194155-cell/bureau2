@@ -10,6 +10,7 @@ export default function SettingsPage() {
   const [activeTab, setActiveTab] = useState("models");
   const [panel, setPanel] = useState(null);
   const [authDisabled, setAuthDisabled] = useState(false);
+  const [loading, setLoading] = useState(true);
   const { models, apiKeys, knowledgeBases, outputDir, setModels, setApiKeys, setKnowledgeBases, setOutputDir } = useStore();
 
   const TABS = [
@@ -19,14 +20,16 @@ export default function SettingsPage() {
   ];
 
   const loadAll = useCallback(async () => {
+    setLoading(true);
     const results = await Promise.allSettled([fetchModels(), fetchApiKeys(), fetchKnowledgeBases()]);
     const setters = [setModels, setApiKeys, setKnowledgeBases];
     let anyFailed = false;
     results.forEach((r, i) => {
-      if (r.status === 'fulfilled') setters[i](r.value);
+      if (r.status === 'fulfilled') setters[i](Array.isArray(r.value) ? r.value : []);
       else anyFailed = true;
     });
     if (anyFailed) toast.error(t('settings.loadFailed'));
+    setLoading(false);
   }, [t]);
 
   useEffect(() => { loadAll(); }, [loadAll]);
@@ -96,9 +99,16 @@ export default function SettingsPage() {
 
       <div className="flex-1 overflow-hidden flex">
         <div className="flex-1 overflow-y-auto p-5">
-          {activeTab === "models" && <ModelList models={models} onAdd={() => setPanel({ type: "addModel" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteModel(id); toast.success(t('settings.deleted')); loadAll(); } }} />}
-          {activeTab === "apikeys" && <KeyList apiKeys={apiKeys} onAdd={() => setPanel({ type: "addKey" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteApiKey(id); toast.success(t('settings.deleted')); loadAll(); } }} />}
-          {activeTab === "knowledge" && <KnowledgeList knowledgeBases={knowledgeBases} models={models} onAdd={() => setPanel({ type: "addKB" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteKnowledgeBase(id); toast.success(t('settings.deleted')); loadAll(); } }} onIndex={async (id) => { await indexKnowledgeBase(id, models.find(m => m.adapter_type === 'builtin' || m.adapter_type === 'openai')?.id); toast.success(t('settings.indexed')); loadAll(); }} />}
+          {loading ? (
+            <div className="flex items-center justify-center py-20 gap-2">
+              <Loader2 size={16} className="text-accent-400 animate-spin" />
+              <span className="text-xs text-surface-500">加载设置中...</span>
+            </div>
+          ) : (<>
+          {activeTab === "models" && <ModelList models={models || []} onAdd={() => setPanel({ type: "addModel" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteModel(id); toast.success(t('settings.deleted')); loadAll(); } }} />}
+          {activeTab === "apikeys" && <KeyList apiKeys={apiKeys || []} onAdd={() => setPanel({ type: "addKey" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteApiKey(id); toast.success(t('settings.deleted')); loadAll(); } }} />}
+          {activeTab === "knowledge" && <KnowledgeList knowledgeBases={knowledgeBases || []} models={models || []} onAdd={() => setPanel({ type: "addKB" })} onDelete={async (id) => { if (confirm(t('settings.confirmDelete'))) { await deleteKnowledgeBase(id); toast.success(t('settings.deleted')); loadAll(); } }} onIndex={async (id) => { await indexKnowledgeBase(id, models?.find(m => m.adapter_type === 'builtin' || m.adapter_type === 'openai')?.id); toast.success(t('settings.indexed')); loadAll(); }} />}
+          </>)}
         </div>
 
         {panel && (
@@ -201,7 +211,7 @@ function ModelList({ models, onAdd, onDelete }) {
         <h2 className="text-xs font-medium text-surface-300">{t('settings.tabs.models')}</h2>
         <button onClick={onAdd} className="h-7 px-3 rounded-lg bg-accent-600 hover:bg-accent-500 text-surface-950 text-xs font-medium flex items-center gap-1 transition-colors"><Plus size={11} />{t('settings.add')}</button>
       </div>
-      {models.map((m) => (
+      { (models || []).map((m) => (
         <div key={m.id} className="flex items-center gap-3 px-3 py-2.5 bg-surface-850 border border-surface-700/40 rounded-2xl hover:border-surface-600/50 transition-colors group">
           {m.source === "builtin" ? <div className="w-8 h-8 rounded-xl bg-accent-500/10 flex items-center justify-center"><span className="text-base">🪄</span></div> : <div className="w-8 h-8 rounded-xl bg-accent-500/10 flex items-center justify-center"><Globe size={14} className="text-accent-400" /></div>}
           <div className="flex-1 min-w-0"><div className="text-xs font-medium text-surface-200">{m.name}</div><div className="text-[10px] text-surface-500 mt-0.5">{m.adapter_type}{m.config?.model ? " \u00b7 " + m.config.model : ""}</div></div>
@@ -211,7 +221,7 @@ function ModelList({ models, onAdd, onDelete }) {
           </div>
         </div>
       ))}
-      {models.length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.models')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
+      { (models || []).length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.models')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
     </div>
   );
 }
@@ -224,7 +234,7 @@ function KeyList({ apiKeys, onAdd, onDelete }) {
         <h2 className="text-xs font-medium text-surface-300">{t('settings.tabs.apikeys')}</h2>
         <button onClick={onAdd} className="h-7 px-3 rounded-lg bg-accent-600 hover:bg-accent-500 text-surface-950 text-xs font-medium flex items-center gap-1 transition-colors"><Plus size={11} />{t('settings.add')}</button>
       </div>
-      {apiKeys.map((k) => (
+      { (apiKeys || []).map((k) => (
         <div key={k.id} className="flex items-center gap-3 px-3 py-2.5 bg-surface-850 border border-surface-700/40 rounded-2xl hover:border-surface-600/50 transition-colors group">
           <div className="w-8 h-8 rounded-xl bg-amber-500/10 flex items-center justify-center"><Key size={14} className="text-amber-400" /></div>
           <div className="flex-1"><div className="text-xs font-medium text-surface-200">{k.name}</div><div className="text-[10px] text-surface-500 mt-0.5">
@@ -233,7 +243,7 @@ function KeyList({ apiKeys, onAdd, onDelete }) {
           <button onClick={() => onDelete(k.id)} className="w-6 h-6 flex items-center justify-center rounded-md text-surface-600 hover:text-red-400 hover:bg-red-500/10 transition-colors opacity-0 group-hover:opacity-100"><Trash2 size={12} /></button>
         </div>
       ))}
-      {apiKeys.length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.apikeys')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
+      { (apiKeys || []).length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.apikeys')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
     </div>
   );
 }
@@ -247,7 +257,7 @@ function KnowledgeList({ knowledgeBases, models, onAdd, onDelete, onIndex }) {
         <h2 className="text-xs font-medium text-surface-300">{t('settings.tabs.knowledge')}</h2>
         <button onClick={onAdd} className="h-7 px-3 rounded-lg bg-accent-600 hover:bg-accent-500 text-surface-950 text-xs font-medium flex items-center gap-1 transition-colors"><Plus size={11} />{t('settings.add')}</button>
       </div>
-      {knowledgeBases.map((kb) => (
+      { (knowledgeBases || []).map((kb) => (
         <div key={kb.id} className="flex items-center gap-3 px-3 py-2.5 bg-surface-850 border border-surface-700/40 rounded-2xl hover:border-surface-600/50 transition-colors group">
           <div className="w-8 h-8 rounded-xl bg-purple-500/10 flex items-center justify-center"><Database size={14} className="text-purple-400" /></div>
           <div className="flex-1 min-w-0"><div className="text-xs font-medium text-surface-200">{kb.name}</div><div className="text-[10px] text-surface-500 mt-0.5 truncate">{kb.folder_path}</div></div>
@@ -259,7 +269,7 @@ function KnowledgeList({ knowledgeBases, models, onAdd, onDelete, onIndex }) {
           </div>
         </div>
       ))}
-      {knowledgeBases.length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.knowledge')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
+      { (knowledgeBases || []).length === 0 && <div className="text-center py-12 text-surface-500 text-xs"><p>{t('settings.tabs.knowledge')} — {t('resource.empty')}</p><p className="mt-1 text-surface-600">{t('resource.emptyHint')}</p></div>}
     </div>
   );
 }

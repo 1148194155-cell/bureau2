@@ -62,13 +62,19 @@ export default function Canvas() {
   const onDragOver = useCallback((e) => { e.preventDefault(); e.dataTransfer.dropEffect = "move"; }, []);
   const onDrop = useCallback((e) => {
     e.preventDefault();
-    const raw = e.dataTransfer.getData("application/reactflow");
-    if (!raw) return;
-    _pushUndo();
-    const { nodeType, data } = JSON.parse(raw);
-    const bounds = reactFlowWrapper.current.getBoundingClientRect();
-    addNode(nodeType, { label: data.name, description: data.desc || "", skillId: data.id, config: {} }, { x: e.clientX - bounds.left - 80, y: e.clientY - bounds.top - 30 });
-    toast.success(data.name, { icon: "+" });
+    try {
+      const raw = e.dataTransfer.getData("application/reactflow");
+      if (!raw) return;
+      _pushUndo();
+      const parsed = JSON.parse(raw);
+      const { nodeType, data } = parsed;
+      if (!nodeType || !reactFlowWrapper.current) return;
+      const bounds = reactFlowWrapper.current.getBoundingClientRect();
+      addNode(nodeType, { label: data?.name, description: data?.desc || "", skillId: data?.id, config: {} }, { x: e.clientX - bounds.left - 80, y: e.clientY - bounds.top - 30 });
+      toast.success(data?.name || nodeType, { icon: "+" });
+    } catch (err) {
+      console.error('[Canvas] drop error:', err);
+    }
   }, [addNode, _pushUndo]);
 
   // ── Clipboard paste → auto-create node ──
@@ -77,51 +83,57 @@ export default function Canvas() {
     if (!wrapper) return;
 
     const onPaste = (e) => {
-      // Only handle paste when canvas wrapper is focused or contains focus
-      if (!wrapper.contains(document.activeElement) && document.activeElement !== document.body) return;
+      try {
+        // Only handle paste when canvas wrapper is focused or contains focus
+        const el = document.activeElement;
+        if (!wrapper.contains(el) && el !== document.body) return;
+        if (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA')) return;
 
-      const text = (e.clipboardData?.getData('text/plain') || '').trim();
-      if (!text) return;
+        const text = (e.clipboardData?.getData('text/plain') || '').trim();
+        if (!text) return;
 
-      const bounds = wrapper.getBoundingClientRect();
-      const centerX = wrapper.clientWidth / 2 - 80;
-      const centerY = wrapper.clientHeight / 2 - 30;
-      const pos = { x: centerX + Math.random() * 100 - 50, y: centerY + Math.random() * 100 - 50 };
+        const bounds = wrapper.getBoundingClientRect();
+        const centerX = wrapper.clientWidth / 2 - 80;
+        const centerY = wrapper.clientHeight / 2 - 30;
+        const pos = { x: centerX + Math.random() * 100 - 50, y: centerY + Math.random() * 100 - 50 };
 
-      // Pattern 1: URL
-      if (/^https?:\/\/\S+$/.test(text)) {
-        e.preventDefault();
-        _pushUndo();
-        addNode("api_caller", { label: "API", description: text.slice(0, 80), config: { url: text, method: "GET" } }, pos);
-        toast.success("已创建 API 节点", { icon: "🔗" });
-        return;
-      }
+        // Pattern 1: URL
+        if (/^https?:\/\/\S+$/.test(text)) {
+          e.preventDefault();
+          _pushUndo();
+          addNode("api_caller", { label: "API", description: text.slice(0, 80), config: { url: text, method: "GET" } }, pos);
+          toast.success("已创建 API 节点", { icon: "🔗" });
+          return;
+        }
 
-      // Pattern 2: File path (Windows: C:\… D:\… or Unix: /…)
-      if (/^[A-Z]:[\\/]\S+$/.test(text) || /^\/\S+$/.test(text)) {
-        e.preventDefault();
-        _pushUndo();
-        addNode("file_output", { label: "文件输出", config: { format: "json", outputDir: "output", fileName: text.split(/[\\/]/).pop() } }, pos);
-        toast.success("已创建文件输出节点", { icon: "📄" });
-        return;
-      }
+        // Pattern 2: File path (Windows: C:\… D:\… or Unix: /…)
+        if (/^[A-Z]:[\\/]\S+$/.test(text) || /^\/\S+$/.test(text)) {
+          e.preventDefault();
+          _pushUndo();
+          addNode("file_output", { label: "文件输出", config: { format: "json", outputDir: "output", fileName: text.split(/[\\/]/).pop() } }, pos);
+          toast.success("已创建文件输出节点", { icon: "📄" });
+          return;
+        }
 
-      // Pattern 3: Code (contains { } or function/const/let/var/import)
-      if (/(\{.*\}|=>|function\s|const\s|let\s|var\s|import\s|export\s)/s.test(text) && text.length > 20) {
-        e.preventDefault();
-        _pushUndo();
-        addNode("code", { label: "代码", code: text }, pos);
-        toast.success("已创建代码节点", { icon: "⚡" });
-        return;
-      }
+        // Pattern 3: Code (contains { } or function/const/let/var/import)
+        if (/(\{.*\}|=>|function\s|const\s|let\s|var\s|import\s|export\s)/s.test(text) && text.length > 20) {
+          e.preventDefault();
+          _pushUndo();
+          addNode("code", { label: "代码", code: text }, pos);
+          toast.success("已创建代码节点", { icon: "⚡" });
+          return;
+        }
 
-      // Pattern 4: Plain text → input node
-      if (text.length < 500) {
-        e.preventDefault();
-        _pushUndo();
-        addNode("input", { label: "输入", input: text }, pos);
-        toast.success("已创建输入节点", { icon: "📝" });
-        return;
+        // Pattern 4: Plain text → input node
+        if (text.length < 500) {
+          e.preventDefault();
+          _pushUndo();
+          addNode("input", { label: "输入", input: text }, pos);
+          toast.success("已创建输入节点", { icon: "📝" });
+          return;
+        }
+      } catch (err) {
+        console.error('[Canvas] paste error:', err);
       }
     };
 
@@ -137,6 +149,7 @@ export default function Canvas() {
       // Skip if user already has nodes or has seen the quick start before
       const { nodes } = useStore.getState();
       if (nodes.length > 0) return;
+      if (useStore.getState().isDirty) return;
       if (localStorage.getItem(QUICK_START_KEY)) return;
 
       try {
@@ -161,9 +174,8 @@ export default function Canvas() {
           target: nodeIdMap[e.target] || e.target,
         }));
 
+        useStore.getState().loadCanvas(nodesWithIds, edgesWithIds);
         useStore.setState({
-          nodes: nodesWithIds,
-          edges: edgesWithIds,
           currentWorkflowName: quickStart.name,
           isDirty: false,
         });
@@ -196,46 +208,49 @@ export default function Canvas() {
   }, [onEdgesChange, _pushUndo]);
 
   const onConnectWithMapping = useCallback((connection) => {
-    _pushUndo();
-    const sourceNode = useStore.getState().nodes.find((n) => n.id === connection.source);
-    const targetNode = useStore.getState().nodes.find((n) => n.id === connection.target);
+    try {
+      _pushUndo();
+      const st = useStore.getState();
+      const sourceNode = st.nodes.find((n) => n.id === connection.source);
+      const targetNode = st.nodes.find((n) => n.id === connection.target);
+      if (!sourceNode || !targetNode) return;
 
-    // 简单连接（源只有一个输出字段，目标只有一个输入字段）跳过映射弹窗
-    const getFieldsForType = (type, dir) => {
-      if (dir === 'source') {
-        if (type === "skill") return ["output", "result", "text", "data"];
-        if (type === "knowledge") return ["documents", "chunks", "context"];
-        if (type === "model") return ["content", "usage", "raw"];
-        if (type === "api_caller") return ["body", "status", "headers"];
-        if (type === "code") return ["result", "output"];
-        return ["output"];
-      }
-      if (type === "skill") return ["input", "text", "prompt", "data"];
-      if (type === "knowledge") return ["query", "search", "filter"];
-      if (type === "model") return ["prompt", "system", "input"];
-      if (type === "condition") return ["input", "value"];
-      if (type === "api_caller") return ["body", "query", "url"];
-      return ["input"];
-    };
-    const sourceFields = getFieldsForType(sourceNode?.type, 'source');
-    const targetFields = getFieldsForType(targetNode?.type, 'target');
-    if (sourceFields.length <= 1 && targetFields.length <= 1) {
-      // 直接连接，设默认映射
-      const edgeId = `edge_${connection.source}_${connection.target}_${Date.now()}`;
-      onConnect({ ...connection, id: edgeId });
-      if (sourceFields[0] && targetFields[0]) {
-        setTimeout(() => {
-          useStore.getState().setEdgeData(edgeId, {
+      const getFieldsForType = (type, dir) => {
+        if (dir === 'source') {
+          if (type === "skill") return ["output", "result", "text", "data"];
+          if (type === "knowledge") return ["documents", "chunks", "context"];
+          if (type === "model") return ["content", "usage", "raw"];
+          if (type === "api_caller") return ["body", "status", "headers"];
+          if (type === "code") return ["result", "output"];
+          return ["output"];
+        }
+        if (type === "skill") return ["input", "text", "prompt", "data"];
+        if (type === "knowledge") return ["query", "search", "filter"];
+        if (type === "model") return ["prompt", "system", "input"];
+        if (type === "condition") return ["input", "value"];
+        if (type === "api_caller") return ["body", "query", "url"];
+        return ["input"];
+      };
+      const sourceFields = getFieldsForType(sourceNode.type, 'source');
+      const targetFields = getFieldsForType(targetNode.type, 'target');
+
+      if (sourceFields.length <= 1 && targetFields.length <= 1) {
+        const edgeId = `edge_${connection.source}_${connection.target}_${Date.now()}`;
+        onConnect({ source: connection.source, target: connection.target, id: edgeId });
+        if (sourceFields[0] && targetFields[0]) {
+          const currentSt = useStore.getState();
+          currentSt.setEdgeData(edgeId, {
             mapping: { [targetFields[0]]: sourceFields[0] },
           });
-        }, 0);
+        }
+        return;
       }
-      return;
-    }
 
-    // 复杂连接才弹映射弹窗
-    if (sourceNode && targetNode) setEdgeMapping({ source: sourceNode, target: targetNode, connection });
-    // onConnect 已在上面的简单路径里调用，这里不应重复
+      // Complex connection: pop up mapping modal (edge created on confirm)
+      setEdgeMapping({ source: sourceNode, target: targetNode, connection: { source: connection.source, target: connection.target } });
+    } catch (err) {
+      console.error('[Canvas] connect error:', err);
+    }
   }, [onConnect, setEdgeMapping, _pushUndo]);
 
   return (

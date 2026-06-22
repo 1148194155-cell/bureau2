@@ -5,7 +5,7 @@ import toast from "react-hot-toast";
 
 export default function OnboardingOverlay() {
   const [dismissed, setDismissed] = useState(() => {
-    try { return localStorage.getItem('localcanvas_quick_start_loaded') === '1'; }
+    try { return localStorage.getItem('lc_onboarding_dismissed') === '1'; }
     catch { return false; }
   });
   const nodes = useStore(s => s.nodes);
@@ -43,13 +43,10 @@ export default function OnboardingOverlay() {
       const midNode = ns.find(n => n.data?.label?.includes("处理") || n.data?.label?.includes("AI"));
       const outNode = ns.find(n => n.data?.label === "输出结果");
       if (inNode && midNode && outNode) {
-        useStore.setState({
-          edges: [
-            { id: e1Id, source: inNode.id, target: midNode.id },
-            { id: e2Id, source: midNode.id, target: outNode.id },
-          ],
-          isDirty: true,
-        });
+        st.addEdges([
+          { id: e1Id, source: inNode.id, target: midNode.id },
+          { id: e2Id, source: midNode.id, target: outNode.id },
+        ]);
       }
       setDemoRunning(false);
       toast.success(hasModel ? "演示工作流已就绪，点「运行」试试！" : "演示工作流已就绪（无需模型），点「运行」试试！", { icon: "🎉", duration: 5000 });

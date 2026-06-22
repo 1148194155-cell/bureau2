@@ -1,0 +1,34 @@
+version: '3.8'
+services:
+  local-canvas:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.app
+    ports:
+      - "3001:3001"
+    volumes:
+      - localcanvas-data:/root/.localcanvas
+      - ./models:/app/models
+      - ./output:/app/output
+    environment:
+      - PORT=3001
+      - HOST=0.0.0.0
+      - LC_DISABLE_AUTH=1
+      - LC_LOG_LEVEL=info
+    restart: unless-stopped
+    # Optional: link to local Ollama instance
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # Optional: standalone Ollama for local models
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    restart: unless-stopped
+
+volumes:
+  localcanvas-data:
+  ollama-data:

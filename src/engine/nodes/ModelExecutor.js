@@ -22,7 +22,7 @@ class ModelExecutor {
   async callModel(adapter, node, inputData, onLog, timeout) {
     const promptTemplate = node.data?.config?.prompt || node.data?.prompt || '';
     const temperature = node.data?.config?.temperature ?? 0.7;
-    const maxTokens = node.data?.config?.max_tokens ?? 2048;
+    const maxTokens = node.data?.config?.max_tokens ?? 4096;
 
     // Render template with input data
     const prompt = promptTemplate ? renderTemplate(promptTemplate, inputData) : JSON.stringify(inputData);
@@ -38,6 +38,10 @@ class ModelExecutor {
       max_tokens: maxTokens,
       timeout,
     });
+    onLog('debug', `Model raw result: content.length=${(result.content||'').length}, tool_calls=${(result.tool_calls||[]).length}, usage=${JSON.stringify(result.usage||{})}`);
+    if (!result.content && !result.tool_calls?.length) {
+      onLog('warn', 'Model returned empty response — check API key and endpoint configuration');
+    }
     return safeParseJson(result.content);
   }
 }

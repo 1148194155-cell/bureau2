@@ -1,0 +1,15 @@
+{
+  "id": "file-organizer",
+  "name": "文件整理助手",
+  "description": "按文件类型自动整理文件夹，将散乱的文件归类到对应目录（图片、文档、视频等）",
+  "version": "1.0.0",
+  "entry": "organize.py",
+  "entryType": "python",
+  "permissions": ["fs.read", "fs.write"],
+  "input_schema": [
+    { "name": "target_dir", "type": "string", "description": "要整理的目录路径", "required": true },
+    { "name": "pattern", "type": "string", "description": "文件匹配模式，如 *.jpg（可选）", "required": false }
+  ],
+  "author": "LocalCanvas",
+  "icon": "📁"
+}

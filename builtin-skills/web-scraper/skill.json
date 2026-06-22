@@ -1,0 +1,15 @@
+{
+  "id": "web-scraper",
+  "name": "网页内容提取",
+  "description": "抓取网页内容并提取正文，支持转换为纯文本或 Markdown 格式",
+  "version": "1.0.0",
+  "entry": "scrape.py",
+  "entryType": "python",
+  "permissions": ["http"],
+  "input_schema": [
+    { "name": "url", "type": "string", "description": "要抓取的网页 URL", "required": true },
+    { "name": "format", "type": "string", "description": "输出格式: text 或 markdown", "required": false, "default": "text" }
+  ],
+  "author": "LocalCanvas",
+  "icon": "🌐"
+}

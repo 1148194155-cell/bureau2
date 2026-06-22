@@ -11,8 +11,17 @@ export const canvasSlice = (set, get) => ({
   // --- ReactFlow ---
   nodes: [],
   edges: [],
+  edgeData: {},
   onNodesChange: (changes) => set({ nodes: applyNodeChanges(changes, get().nodes) }),
-  onEdgesChange: (changes) => set({ edges: applyEdgeChanges(changes, get().edges) }),
+  onEdgesChange: (changes) => {
+    const state = get();
+    const newEdges = applyEdgeChanges(changes, state.edges);
+    const newEdgeData = { ...state.edgeData };
+    for (const ch of changes) {
+      if (ch.type === 'remove' && ch.id) delete newEdgeData[ch.id];
+    }
+    set({ edges: newEdges, edgeData: newEdgeData });
+  },
   onConnect: (connection) => set({ edges: addEdge(connection, get().edges) }),
 
   addNode: (type, data, position) => {
@@ -28,20 +37,61 @@ export const canvasSlice = (set, get) => ({
     return id;
   },
 
-  removeNode: (id) => set({
-    nodes: get().nodes.filter((n) => n.id !== id),
-    edges: get().edges.filter((e) => e.source !== id && e.target !== id),
-    isDirty: true,
+  removeNode: (id) => {
+    const removedEdges = get().edges.filter((e) => e.source === id || e.target === id);
+    const newEdgeData = { ...get().edgeData };
+    for (const e of removedEdges) delete newEdgeData[e.id];
+    set({
+      nodes: get().nodes.filter((n) => n.id !== id),
+      edges: get().edges.filter((e) => e.source !== id && e.target !== id),
+      edgeData: newEdgeData,
+      isDirty: true,
+    });
+  },
+
+  setEdgeData: (id, data) => set({
+    edgeData: { ...get().edgeData, [id]: { ...get().edgeData[id], ...data } },
+    edges: get().edges.map((e) => e.id === id ? { ...e, data: { ...e.data, ...data } } : e),
   }),
+  getEdgeData: (id) => get().edgeData[id],
 
   updateNodeData: (id, data) => set({
     nodes: get().nodes.map((n) => n.id === id ? { ...n, data: { ...n.data, ...data } } : n),
   }),
 
-  clearCanvas: () => set({ nodes: [], edges: [], isDirty: false }),
+  clearCanvas: () => set({ nodes: [], edges: [], edgeData: {}, isDirty: false }),
 
-  addNodes: (newNodes) => set({ nodes: [...get().nodes, ...newNodes], isDirty: true }),
-  addEdges: (newEdges) => set({ edges: [...get().edges, ...newEdges], isDirty: true }),
+  /** Load a complete canvas replacement — nodes, edges, and sync edgeData from edge data payloads */
+  loadCanvas: (newNodes, newEdges) => {
+    const newEdgeData = {};
+    for (const n of newNodes) {
+      const match = n.id?.match(/^node_(\d+)$/);
+      if (match) nodeIdCounter = Math.max(nodeIdCounter, parseInt(match[1]));
+    }
+    for (const e of (newEdges || [])) {
+      if (e.data && Object.keys(e.data).length > 0) {
+        newEdgeData[e.id] = { ...e.data };
+      }
+    }
+    set({ nodes: newNodes, edges: newEdges || [], edgeData: newEdgeData, isDirty: true });
+  },
+
+  addNodes: (newNodes) => {
+    for (const n of newNodes) {
+      const match = n.id?.match(/^node_(\d+)$/);
+      if (match) nodeIdCounter = Math.max(nodeIdCounter, parseInt(match[1]));
+    }
+    set({ nodes: [...get().nodes, ...newNodes], isDirty: true });
+  },
+  addEdges: (newEdges) => {
+    const newEdgeData = { ...get().edgeData };
+    for (const e of newEdges) {
+      if (e.data && Object.keys(e.data).length > 0) {
+        newEdgeData[e.id] = { ...(newEdgeData[e.id] || {}), ...e.data };
+      }
+    }
+    set({ edges: [...get().edges, ...newEdges], edgeData: newEdgeData, isDirty: true });
+  },
 
   // --- Undo/Redo ---
   undoStack: [],
@@ -49,7 +99,7 @@ export const canvasSlice = (set, get) => ({
   _pushUndo: () => {
     const { nodes, edges, undoStack } = get();
     set({
-      undoStack: [...undoStack.slice(-49), { nodes: structuredClone(nodes), edges: structuredClone(edges) }],
+      undoStack: [...undoStack.slice(-49), { nodes: structuredClone(nodes), edges: structuredClone(edges), edgeData: structuredClone(get().edgeData) }],
       redoStack: [],
     });
   },
@@ -59,8 +109,8 @@ export const canvasSlice = (set, get) => ({
     const prev = undoStack[undoStack.length - 1];
     set({
       undoStack: undoStack.slice(0, -1),
-      redoStack: [...get().redoStack, { nodes: structuredClone(nodes), edges: structuredClone(edges) }],
-      nodes: prev.nodes, edges: prev.edges,
+      redoStack: [...get().redoStack, { nodes: structuredClone(nodes), edges: structuredClone(edges), edgeData: structuredClone(get().edgeData) }],
+      nodes: prev.nodes, edges: prev.edges, edgeData: prev.edgeData || {},
     });
   },
   redo: () => {
@@ -69,8 +119,8 @@ export const canvasSlice = (set, get) => ({
     const next = redoStack[redoStack.length - 1];
     set({
       redoStack: redoStack.slice(0, -1),
-      undoStack: [...get().undoStack, { nodes: structuredClone(nodes), edges: structuredClone(edges) }],
-      nodes: next.nodes, edges: next.edges,
+      undoStack: [...get().undoStack, { nodes: structuredClone(nodes), edges: structuredClone(edges), edgeData: structuredClone(get().edgeData) }],
+      nodes: next.nodes, edges: next.edges, edgeData: next.edgeData || {},
     });
   },
 

@@ -16,6 +16,6 @@ echo Backend: http://localhost:3001
 echo Frontend: http://localhost:5173
 
 start "" /B node src/index.js > backend_output.log 2>&1
-start "" /B node_portable\npx.cmd vite --cwd renderer > frontend_output.log 2>&1
+start "" /B cmd /c "cd renderer && ..\node_portable\npx.cmd vite" > frontend_output.log 2>&1
 echo Browser will open at http://localhost:5173
 exit

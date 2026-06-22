@@ -6,27 +6,31 @@ import { useI18n } from "../i18n";
 export default function EdgeMappingModal() {
   const { t } = useI18n();
   const { edgeMapping, setEdgeMapping, setEdgeData } = useStore();
+
+  // Compute fields from mapping (always, before early return)
+  const sourceFields = !edgeMapping ? [] :
+    edgeMapping.source.type === "skill" ? ["output", "result", "text", "data"] :
+    edgeMapping.source.type === "knowledge" ? ["documents", "chunks", "context"] :
+    edgeMapping.source.type === "model" ? ["content", "usage", "raw"] :
+    edgeMapping.source.type === "api_caller" ? ["body", "status", "headers"] :
+    edgeMapping.source.type === "code" ? ["result", "output"] :
+    ["output"];
+
+  const targetFields = !edgeMapping ? [] :
+    edgeMapping.target.type === "skill" ? ["input", "text", "prompt", "data"] :
+    edgeMapping.target.type === "knowledge" ? ["query", "search", "filter"] :
+    edgeMapping.target.type === "model" ? ["prompt", "system", "input"] :
+    edgeMapping.target.type === "condition" ? ["input", "value"] :
+    edgeMapping.target.type === "api_caller" ? ["body", "query", "url"] :
+    ["input"];
+
+  // Hooks must be called unconditionally — before any early return
+  const [sourceField, setSourceField] = useState(sourceFields[0] || "output");
+  const [targetField, setTargetField] = useState(targetFields[0] || "input");
+
   if (!edgeMapping) return null;
 
   const { source, target, connection } = edgeMapping;
-  const sourceFields =
-    source.type === "skill" ? ["output", "result", "text", "data"] :
-    source.type === "knowledge" ? ["documents", "chunks", "context"] :
-    source.type === "model" ? ["content", "usage", "raw"] :
-    source.type === "api_caller" ? ["body", "status", "headers"] :
-    source.type === "code" ? ["result", "output"] :
-    ["output"];
-
-  const targetFields =
-    target.type === "skill" ? ["input", "text", "prompt", "data"] :
-    target.type === "knowledge" ? ["query", "search", "filter"] :
-    target.type === "model" ? ["prompt", "system", "input"] :
-    target.type === "condition" ? ["input", "value"] :
-    target.type === "api_caller" ? ["body", "query", "url"] :
-    ["input"];
-
-  const [sourceField, setSourceField] = useState(sourceFields[0]);
-  const [targetField, setTargetField] = useState(targetFields[0]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -58,16 +62,11 @@ export default function EdgeMappingModal() {
           <button onClick={() => setEdgeMapping(null)} className="h-7 px-3 rounded-lg text-surface-400 hover:text-surface-200 text-xs transition-colors">{t('edgeMapping.cancel')}</button>
           <button onClick={() => {
             if (connection?.source && connection?.target) {
-              // 找到刚创建的边（按 source+target 匹配）
-              const edges = useStore.getState().edges;
-              const edge = [...edges].reverse().find(
-                (e) => e.source === connection.source && e.target === connection.target
-              );
-              if (edge) {
-                setEdgeData(edge.id, {
-                  mapping: { [targetField]: sourceField },
-                });
-              }
+              const state = useStore.getState();
+              state._pushUndo();
+              const edgeId = `edge_${connection.source}_${connection.target}_${Date.now()}`;
+              state.onConnect({ source: connection.source, target: connection.target, id: edgeId });
+              state.setEdgeData(edgeId, { mapping: { [targetField]: sourceField } });
             }
             setEdgeMapping(null);
           }} className="h-7 px-4 rounded-lg bg-accent-600 hover:bg-accent-500 text-surface-950 text-xs font-medium transition-colors">{t('edgeMapping.confirm')}</button>

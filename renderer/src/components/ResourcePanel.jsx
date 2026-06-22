@@ -12,6 +12,7 @@ export default function ResourcePanel() {
   const [showTemplates, setShowTemplates] = useState(false);
   const [templates, setTemplates] = useState([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [initialLoad, setInitialLoad] = useState(true);
 
   useEffect(() => {
     fetch('/api/templates').then(r => r.json()).then(d => setTemplates(d.data || [])).catch(() => {});
@@ -38,7 +39,7 @@ export default function ResourcePanel() {
           { icon: '⚠️', duration: 5000, style: { background: '#292524', color: '#fbbf24', fontSize: '12px' } });
       }
     } catch { toast.error(t('resource.loadFailed')); }
-    finally { setRefreshing(false); }
+    finally { setRefreshing(false); setInitialLoad(false); }
   }, [t]);
 
   useEffect(() => { load(); }, [load]);
@@ -99,7 +100,9 @@ export default function ResourcePanel() {
             {item.desc && <div className="text-[10px] text-surface-500 truncate mt-0.5 ml-[22px]">{item.desc}</div>}
           </div>
         ))}
-        {items.length === 0 && <div className="text-xs text-surface-600 italic text-center py-8">{t('resource.empty')}</div>}
+        {items.length === 0 && !refreshing && !initialLoad && <div className="text-xs text-surface-600 italic text-center py-8">{t('resource.empty')}</div>}
+        {items.length === 0 && refreshing && <div className="flex items-center justify-center py-8 gap-2"><div className="w-3 h-3 rounded-full border-2 border-surface-600 border-t-accent-400 animate-spin" /><span className="text-xs text-surface-500">加载中...</span></div>}
+        {items.length === 0 && initialLoad && !refreshing && <div className="flex items-center justify-center py-8 gap-2"><div className="w-3 h-3 rounded-full border-2 border-surface-600 border-t-accent-400 animate-spin" /><span className="text-xs text-surface-500">加载中...</span></div>}
       </div>
 
       {/* Built-in nodes */}
@@ -114,30 +117,26 @@ export default function ResourcePanel() {
             </button>
             {showTemplates && templates.map(tmpl => (
               <button key={tmpl.id} onClick={() => {
-                useStore.getState()._pushUndo();
-                useStore.getState().clearCanvas();
-                // 给模板节点换上唯一 ID，避免与已有节点冲突
+                const st = useStore.getState();
+                st._pushUndo();
+                // 给模板节点换上唯一 ID
                 const idMap = {};
                 const remapId = (oldId) => {
                   if (!idMap[oldId]) idMap[oldId] = `tpl_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
                   return idMap[oldId];
                 };
-                tmpl.nodes.forEach(n => {
+                const newNodes = tmpl.nodes.map(n => {
                   const newId = remapId(n.id);
-                  useStore.getState().addNode(n.type, {
-                    ...n.data,
-                    nodeId: newId,
-                    label: n.data?.label || n.type,
-                  }, n.position);
+                  return { ...n, id: newId, data: { ...n.data, nodeId: newId, label: n.data?.label || n.type } };
                 });
-                const remappedEdges = tmpl.edges.map(e => ({
+                const newEdges = tmpl.edges.map(e => ({
                   ...e,
                   id: `tpl_edge_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
                   source: idMap[e.source],
                   target: idMap[e.target],
                 }));
-                useStore.setState({ edges: remappedEdges, isDirty: true });
-                useStore.getState().setCurrentWorkflowName(tmpl.name);
+                st.loadCanvas(newNodes, newEdges);
+                st.setCurrentWorkflowName(tmpl.name);
                 toast.success(`已加载模板: ${tmpl.name}`);
               }}
                 className="w-full text-left px-2.5 py-1.5 mb-1 rounded-xl bg-surface-800/50 border border-surface-700/30 hover:border-accent-500/30 hover:bg-surface-750/50 transition-all">

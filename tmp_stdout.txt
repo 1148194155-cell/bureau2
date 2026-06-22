@@ -1,3 +1,0 @@
-[DB] Initialized at C:\Users\11481\.localcanvas\localcanvas.db
-[AutoDiscover] Starting local resource discovery...
-[WS] WebSocket server initialized at /ws

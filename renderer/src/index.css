@@ -31,7 +31,7 @@ body {
   transition: transform 0.12s, border-color 0.12s;
 }
 .react-flow__handle:hover { transform: scale(1.4); border-color: #fb923c; }
-.react-flow__edge-path { stroke: #3a3a3c; stroke-width: 1.5px; }
+.react-flow__edge-path { stroke: #3b4148; stroke-width: 1.5px; }
 .react-flow__edge.selected .react-flow__edge-path { stroke: #FF5A1F; stroke-width: 2px; }
 .react-flow__edge:hover .react-flow__edge-path { stroke: #6b7280; }
 .react-flow__controls {

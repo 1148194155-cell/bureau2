@@ -11,9 +11,6 @@ export const uiSlice = (set, get) => ({
   // --- Edge mapping ---
   edgeMapping: null,
   setEdgeMapping: (m) => set({ edgeMapping: m }),
-  setEdgeData: (edgeId, data) => set({
-    edges: get().edges.map((e) => e.id === edgeId ? { ...e, data: { ...e.data, ...data } } : e),
-  }),
 
   // --- AI Chat ---
   chatMessages: [],

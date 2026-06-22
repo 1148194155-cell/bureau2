@@ -61,7 +61,12 @@ export class OllamaAdapter extends BaseModelAdapter {
     // For chat we use the /api/chat endpoint
     const body = {
       model: this.model,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      messages: messages.map(m => {
+        const msg = { role: m.role, content: m.content || '' };
+        if (m.tool_calls) msg.tool_calls = m.tool_calls;
+        if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+        return msg;
+      }),
       stream: false,
       options: {
         temperature: options.temperature ?? 0.7,
@@ -77,7 +82,7 @@ export class OllamaAdapter extends BaseModelAdapter {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(options.timeout ?? 60000),
+      signal: AbortSignal.timeout(options.timeout ?? 45000),
     });
 
     if (!res.ok) {
@@ -169,7 +174,12 @@ export class OpenAIAdapter extends BaseModelAdapter {
   async chat(messages, options = {}) {
     const body = {
       model: this.model,
-      messages: messages.map(m => ({ role: m.role, content: m.content })),
+      messages: messages.map(m => {
+        const msg = { role: m.role, content: m.content || '' };
+        if (m.tool_calls) msg.tool_calls = m.tool_calls;
+        if (m.tool_call_id) msg.tool_call_id = m.tool_call_id;
+        return msg;
+      }),
       temperature: options.temperature ?? 0.7,
       ...(options.max_tokens ? { max_tokens: options.max_tokens } : {}),
     };
@@ -197,8 +207,23 @@ export class OpenAIAdapter extends BaseModelAdapter {
     const data = await res.json();
     const choice = data.choices?.[0];
 
+    // DeepSeek / reasoning models may return content in different fields
+    let content = choice?.message?.content || '';
+    // If content is empty but reasoning_content exists, use it
+    if (!content && choice?.message?.reasoning_content) {
+      content = choice.message.reasoning_content;
+    }
+    if (!content && choice?.delta?.content) content = choice.delta.content;
+    if (!content && choice?.text) content = choice.text;
+
+    if (!content) {
+      console.log('[OpenAIAdapter] Empty content - raw choice keys:', JSON.stringify(Object.keys(choice||{})).slice(0,200));
+      console.log('[OpenAIAdapter] Raw message keys:', JSON.stringify(Object.keys(choice?.message||{})).slice(0,200));
+      console.log('[OpenAIAdapter] Raw data sample:', JSON.stringify(data).slice(0,500));
+    }
+
     return {
-      content: choice?.message?.content || '',
+      content,
       tool_calls: choice?.message?.tool_calls || [],
       usage: data.usage || {},
     };
@@ -303,12 +328,8 @@ export class LlamaCppAdapter extends BaseModelAdapter {
 
   async chat(messages, options = {}) {
     // llama.cpp server uses /completion endpoint with prompt-style input
-    const prompt = messages.map(m => {
-      if (m.role === 'system') return `<|im_start|>system\n${m.content}<|im_end|>\n`;
-      if (m.role === 'user') return `<|im_start|>user\n${m.content}<|im_end|>\n`;
-      if (m.role === 'assistant') return `<|im_start|>assistant\n${m.content}<|im_end|>\n`;
-      return `${m.content}\n`;
-    }).join('') + '<|im_start|>assistant\n';
+    const prompt = this._buildPrompt(messages, options.tools);
+    const hasTools = options.tools && options.tools.length > 0;
 
     const body = {
       prompt,
@@ -326,11 +347,88 @@ export class LlamaCppAdapter extends BaseModelAdapter {
 
     if (!res.ok) throw new Error(`llama.cpp API error ${res.status}`);
     const data = await res.json();
+    const raw = data.content || '';
+
+    const toolCalls = hasTools ? this._extractToolCalls(raw) : [];
+    const content = hasTools ? this._stripToolCalls(raw) : raw;
 
     return {
-      content: data.content || '',
+      content,
+      tool_calls: toolCalls,
       usage: { total_tokens: data.tokens_predicted || 0 },
     };
+  }
+
+  _buildPrompt(messages, tools) {
+    let parts = '';
+    for (const m of messages) {
+      let content = m.content;
+      // Inject tool definitions into system prompt (llama.cpp doesn't support native tool calling)
+      if (m.role === 'system' && tools && tools.length > 0) {
+        content += '\n\n可用工具（只有在用户要求操作时才调用，打招呼直接回复不要调用工具）：\n';
+        for (const t of tools) {
+          const fn = t.function || t;
+          const params = fn.parameters?.properties ? Object.keys(fn.parameters.properties).join(', ') : '无参数';
+          content += `- ${fn.name}：${fn.description}（参数：${params}）\n`;
+        }
+        content += '\n调用格式：\n<tool_call>{"name":"函数名","arguments":{...}}</tool_call>\n不要用其他格式。';
+      }
+      const role = m.role === 'assistant' ? 'assistant' : m.role === 'system' ? 'system' : 'user';
+      parts += `<|im_start|>${role}\n${content}<|im_end|>\n`;
+    }
+    parts += '<|im_start|>assistant\n';
+    return parts;
+  }
+
+  _extractToolCalls(text) {
+    const calls = [];
+    const regexTag = /<tool_call>\s*(\{[\s\S]*?\})\s*<\/tool_call>/g;
+    let match;
+    while ((match = regexTag.exec(text)) !== null) {
+      try {
+        const parsed = JSON.parse(match[1]);
+        calls.push(this._makeToolCall(parsed, calls.length));
+      } catch { /* skip malformed */ }
+    }
+    // Fallback: bare JSON blocks {"name":"xxx","arguments":{...}}
+    const regexBare = /\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*:\s*\{/g;
+    let match2;
+    while ((match2 = regexBare.exec(text)) !== null) {
+      try {
+        let depth = 0, end = match2.index;
+        do {
+          if (text[end] === '{') depth++;
+          if (text[end] === '}') depth--;
+          end++;
+        } while (depth > 0 && end < text.length);
+        const jsonStr = text.slice(match2.index, end);
+        const parsed = JSON.parse(jsonStr);
+        if (!calls.some(c => c.function?.name === parsed.name)) {
+          calls.push(this._makeToolCall(parsed, calls.length));
+        }
+      } catch { /* skip malformed */ }
+    }
+    return calls;
+  }
+
+  _makeToolCall(parsed, index) {
+    return {
+      id: `call_${Date.now()}_${index}`,
+      type: 'function',
+      function: {
+        name: parsed.name || parsed.function?.name,
+        arguments: typeof parsed.arguments === 'string'
+          ? parsed.arguments
+          : JSON.stringify(parsed.arguments || {}),
+      },
+    };
+  }
+
+  _stripToolCalls(text) {
+    let result = text.replace(/<tool_call>[\s\S]*?<\/tool_call>\n*/g, '').trim();
+    result = result.replace(/\n?\{\s*"name"\s*:\s*"[^"]+"\s*,\s*"arguments"\s*[\s\S]*?\}\s*$/g, '').trim();
+    result = result.replace(/<\/?tool_call>\s*/g, '').trim();
+    return result;
   }
 
   async embed(texts) {

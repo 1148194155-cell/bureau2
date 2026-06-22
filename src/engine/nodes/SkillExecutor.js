@@ -50,7 +50,7 @@ class SkillExecutor {
     if (preferredModel && adapters[preferredModel]) {
       adapter = adapters[preferredModel];
     } else {
-      adapter = adapters['builtin']
+      adapter = Object.values(adapters).find(a => a && typeof a.chat === 'function' && a.name !== '内置模型 (本地)')
         || Object.values(adapters).find(a => a && typeof a.chat === 'function');
     }
     if (!adapter) {

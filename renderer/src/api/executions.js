@@ -57,7 +57,9 @@ export function createExecutionSocket(executionId) {
       ws.onclose = null;
       ws.close();
     }
-    ws = new WebSocket(`${protocol}//${host}/ws`);
+    const token = localStorage.getItem("lc_token");
+    const tokenParam = token ? `?token=${encodeURIComponent(token)}` : "";
+    ws = new WebSocket(`${protocol}//${host}/ws${tokenParam}`);
     if (prevOnMessage) ws.onmessage = prevOnMessage;
     if (prevOnError) ws.onerror = prevOnError;
     if (prevOnClose) ws.onclose = prevOnClose;
@@ -120,12 +122,7 @@ export function createExecutionSocket(executionId) {
           }
         }
         if (status?.status === "completed" || status?.status === "failed") {
-          proxy.onmessage?.(
-            JSON.stringify({
-              type: status.status === "completed" ? "complete" : "error",
-              error: status.error,
-            })
-          );
+          proxy.onmessage?.({ data: JSON.stringify({ type: status.status === "completed" ? "complete" : "error", error: status.error }) });
         }
       } catch {
         /* non-critical */

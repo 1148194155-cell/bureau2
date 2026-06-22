@@ -195,6 +195,22 @@
 ### DELETE /api/workflows/:id
 删除工作流。
 
+### POST /api/workflows/share/:id
+生成工作流分享链接。
+
+**响应:**
+```json
+{ "success": true, "data": { "share_token": "base64token", "share_url": "/api/workflows/import/base64token" } }
+```
+
+### GET /api/workflows/import/:token
+通过分享链接导入工作流。
+
+**响应:**
+```json
+{ "success": true, "data": { "id": 1, "name": "我的工作流", "nodes": [...], "edges": [...] } }
+```
+
 ### POST /api/workflows/run
 执行工作流。
 
@@ -265,11 +281,17 @@
 
 | type | payload | 说明 |
 |------|---------|------|
-| `add_node` | `{ nodeType, data, position? }` | 添加节点 |
-| `add_edge` | `{ source, target }` | 添加连线 |
-| `update_config` | `{ nodeId, config }` | 更新节点配置 |
+| `add_node` | `{ nodeType, data: { label, config }, position? }` | 添加节点 |
+| `connect` | `{ source_label, target_label }` | 添加连线 |
+| `update_config` | `{ node_label, config }` | 更新节点配置 |
+| `delete_node` | `{ node_label }` | 删除节点 |
+| `set_workflow_name` | `{ name }` | 设置工作流名称 |
 | `run_workflow` | `{}` | 触发执行 |
 | `clear_canvas` | `{}` | 清空画布 |
+| `list_workflows` | `{}` | 列出所有工作流 |
+| `read_file` | `{ file_path }` | 读取文件 |
+| `write_file` | `{ file_path, content, force? }` | 写入文件 |
+| `navigate_to_settings` | `{}` | 导航到设置页 |
 
 ---
 

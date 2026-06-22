@@ -11,7 +11,7 @@ function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-router.get('/apikeys', asyncHandler(async (req, res) => {
+router.get('/apikeys', authRequired, asyncHandler(async (req, res) => {
   const keys = apiKeyService.list(getUserId(req));
   res.json({ success: true, data: keys });
 }));

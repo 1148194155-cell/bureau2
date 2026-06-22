@@ -12,7 +12,7 @@ export default defineConfig({
   },
   server: {
     port: 5173,
-    host: '::',
+    host: '0.0.0.0',
     allowedHosts: ['.trycloudflare.com', '.lhr.life', '.sslip.io'],
     hmr: { overlay: false },
     proxy: {

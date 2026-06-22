@@ -3,7 +3,7 @@
  */
 import { Router } from 'express';
 import { authService } from '../services/authService.js';
-import { authRequired, getAuthDisabled, setAuthDisabled } from '../middleware/auth.js';
+import { authRequired, authOptional, getAuthDisabled, setAuthDisabled } from '../middleware/auth.js';
 
 const router = Router();
 
@@ -15,7 +15,7 @@ router.get('/auth/status', asyncHandler(async (req, res) => {
   res.json({ success: true, data: { authDisabled: getAuthDisabled() } });
 }));
 
-router.post('/auth/toggle', asyncHandler(async (req, res) => {
+router.post('/auth/toggle', authOptional, asyncHandler(async (req, res) => {
   setAuthDisabled(req.body.disabled);
   res.json({ success: true, data: { authDisabled: getAuthDisabled() } });
 }));

@@ -249,9 +249,10 @@ describe('reviewPreExecution', () => {
     });
 
     it('errors when file_output targets system path', () => {
+      const sysDir = process.platform === 'win32' ? 'C:\\Windows\\System32\\output' : '/etc/output';
       const nodes = [
         { id: '1', type: 'input', data: {} },
-        { id: '2', type: 'file_output', data: { config: { outputDir: '/etc/output' } } },
+        { id: '2', type: 'file_output', data: { config: { outputDir: sysDir } } },
       ];
       const edges = [{ source: '1', target: '2' }];
       const result = reviewPreExecution({ nodes, edges }, [], []);

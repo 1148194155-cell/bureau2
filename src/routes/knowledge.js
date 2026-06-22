@@ -11,7 +11,7 @@ function asyncHandler(fn) {
   return (req, res, next) => Promise.resolve(fn(req, res, next)).catch(next);
 }
 
-router.get('/knowledge', asyncHandler(async (req, res) => {
+router.get('/knowledge', authRequired, asyncHandler(async (req, res) => {
   const bases = knowledgeService.list(getUserId(req));
   res.json({ success: true, data: bases });
 }));

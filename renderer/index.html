@@ -1,13 +1,92 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=3.0, user-scalable=yes">
     <title>Local Canvas</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='20' fill='%23059669'/><text x='50' y='68' text-anchor='middle' font-size='55' font-weight='bold' fill='white'>L</text></svg>" />
+  <style>@media (max-width: 768px){body{zoom:0.8}.canvas-area{overflow-x:auto}button,input{min-height:44px;min-width:44px;font-size:16px}}</style>  <link rel="manifest" href="/manifest.json" />
+  <style>
+    /* Loading screen — shows before React mounts */
+    #loading-screen {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #141415;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      transition: opacity 0.4s ease;
+    }
+    #loading-screen.hidden { opacity: 0; pointer-events: none; }
+    #loading-screen .logo {
+      width: 48px; height: 48px;
+      background: rgba(255,90,31,0.12);
+      border-radius: 14px;
+      display: flex; align-items: center; justify-content: center;
+      margin-bottom: 16px;
+    }
+    #loading-screen .logo svg { width: 24px; height: 24px; }
+    #loading-screen .title {
+      color: #e9ecef; font-size: 15px; font-weight: 600;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      margin-bottom: 8px;
+    }
+    #loading-screen .sub {
+      color: #6c757d; font-size: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+    #loading-screen .spinner {
+      margin-top: 24px;
+      width: 20px; height: 20px;
+      border: 2px solid #2c2c2e;
+      border-top-color: #FF5A1F;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
   </head>
   <body class="bg-surface-900 text-surface-100 overflow-hidden">
+    <div id="loading-screen">
+      <div class="logo">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#FF5A1F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+        </svg>
+      </div>
+      <div class="title">Local Canvas</div>
+      <div class="sub">正在加载...</div>
+      <div class="spinner"></div>
+    </div>
     <div id="root"></div>
     <script type="module" src="/src/main.jsx"></script>
+    <script>
+      // Service Worker — 只在生产环境注册，开发模式自动注销旧 SW
+      (function(){
+        if (!('serviceWorker' in navigator)) return;
+        var isDev = location.hostname === 'localhost' || location.hostname === '127.0.0.1';
+        if (isDev) {
+          // 开发模式：注销所有已有的 SW，避免缓存拦截 Vite HMR
+          navigator.serviceWorker.getRegistrations().then(function(regs){ regs.forEach(function(r){ r.unregister(); }); });
+        } else {
+          navigator.serviceWorker.register('/sw.js');
+        }
+      })();
+      // Loading screen 隐藏：等 #root 出现 React 渲染的内容
+      var _lh = function(){
+        var el = document.getElementById('loading-screen');
+        if(el && document.getElementById('root') && document.getElementById('root').children.length > 0){
+          el.classList.add('hidden');
+          setTimeout(function(){if(el.parentNode)el.parentNode.removeChild(el);}, 400);
+          return true;
+        }
+        return false;
+      };
+      // 轮询检测（50ms间隔）
+      var _lt = setInterval(function(){ if(_lh()) clearInterval(_lt); }, 50);
+      // window load 后备
+      window.addEventListener('load', function(){ setTimeout(_lh, 200); });
+      // 8秒兜底
+      setTimeout(function(){ clearInterval(_lt); _lh(); }, 8000);
+    </script>
   </body>
 </html>

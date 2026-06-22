@@ -27,3 +27,4 @@ class ApiExecutor {
 }
 
 registerNodeExecutor('api', new ApiExecutor());
+registerNodeExecutor('api_caller', new ApiExecutor());

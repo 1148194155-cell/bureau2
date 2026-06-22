@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import CanvasPage from "./pages/CanvasPage";
 import SettingsPage from "./pages/SettingsPage";
+import ErrorBoundary from "./components/ErrorBoundary";
 import { Settings, Layers, Zap } from "lucide-react";
 import { useI18n } from "./i18n";
 import useStore from "./store/store";
@@ -67,12 +68,16 @@ export default function App() {
       </nav>
 
       <div className="flex-1 overflow-hidden">
+        <ErrorBoundary>
         <div style={{ display: page === "canvas" ? "flex" : "none" }} className="h-full flex-col">
           <CanvasPage />
         </div>
+        </ErrorBoundary>
+        <ErrorBoundary>
         <div style={{ display: page === "settings" ? "flex" : "none" }} className="h-full flex-col">
           <SettingsPage />
         </div>
+        </ErrorBoundary>
       </div>
     </div>
   );

@@ -5,7 +5,7 @@
  * New code should import from the specific domain module:
  *   import { fetchSkills } from "../api/skills";
  */
-export { fetchSkills } from "./skills";
+export { fetchSkills, fetchSkillStore, installSkill } from "./skills";
 export { fetchModels, createModel, deleteModel } from "./models";
 export { fetchApis, createApi, deleteApi } from "./apis";
 export {
@@ -32,4 +32,4 @@ export {
   compareExecutions,
   createExecutionSocket,
 } from "./executions";
-export { aiChat, getBuiltinStatus } from "./ai";
+export { aiChat, aiChatStream, getBuiltinStatus } from "./ai";

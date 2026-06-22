@@ -21,7 +21,7 @@ const createApiSchema = z.object({
   description: z.string().optional().default(''),
 });
 
-router.get('/apis', asyncHandler(async (req, res) => {
+router.get('/apis', authRequired, asyncHandler(async (req, res) => {
   const apis = await apiService.list(getUserId(req));
   res.json({ success: true, data: apis });
 }));

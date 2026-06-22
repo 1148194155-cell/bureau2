@@ -6,11 +6,85 @@ import useStore from "../store/store";
 import { aiChat, getBuiltinStatus, saveWorkflow, listWorkflows, loadWorkflow, createModel, deleteModel, createApiKey, deleteApiKey, createKnowledgeBase, deleteKnowledgeBase, indexKnowledgeBase, runWorkflow, createExecutionSocket } from "../api/api";
 import { useI18n } from "../i18n";
 
+/** Format output files into a readable chat message. */
+function formatOutputMarkdown(outputFiles, results) {
+  if (!outputFiles || outputFiles.length === 0) return null;
+
+  const lines = [];
+  const hasAnyOutput = outputFiles.some(f => f.nodeType === 'file_output' && f.content);
+  lines.push(hasAnyOutput ? '## 📦 执行完成 · 输出文件\n' : '## ✅ 执行完成\n');
+
+  for (const f of outputFiles) {
+    const type = f.nodeType || 'output';
+    const label = f.nodeName || type;
+    const emoji = type === 'file_output' ? '📄' : type === 'skill' ? '🔧' : type === 'input' ? '📝' : '📋';
+
+    if (type === 'file_output' && f.content) {
+      const ext = String(f.content).split('.').pop()?.toLowerCase() || '';
+      const fileUrl = `file:///${String(f.content).replace(/\\/g, '/')}`;
+      if (['png','jpg','jpeg','gif','svg','webp','bmp'].includes(ext)) {
+        lines.push(`### ${emoji} ${label}`);
+        lines.push(`![${label}](${fileUrl})`);
+        lines.push(`> 🖼️ [打开图片](${fileUrl})  ·  \`${f.content}\`\n`);
+      } else if (['mp4','mov','avi','webm','mkv'].includes(ext)) {
+        lines.push(`### 🎬 ${label}`);
+        lines.push(`> 📂 [打开文件夹](${fileUrl})  ·  \`${f.content}\`\n`);
+      } else if (['pdf','docx','pptx','xlsx'].includes(ext)) {
+        lines.push(`### 📑 ${label}`);
+        lines.push(`> 📂 [打开文档](${fileUrl})  ·  \`${f.content}\`\n`);
+      } else {
+        lines.push(`### ${emoji} ${label}`);
+        lines.push(`> 📂 [打开文件](${fileUrl})  ·  \`${f.content}\`\n`);
+      }
+    } else if (f.content && typeof f.content === 'string' && f.content.length > 0) {
+      lines.push(`### ${emoji} ${label}`);
+      const trimmed = f.content.length > 600 ? f.content.slice(0, 600) + '\n... (已截断)' : f.content;
+      lines.push('```');
+      if (f.content.startsWith('{') || f.content.startsWith('[')) lines.push(trimmed);
+      else lines.push(trimmed);
+      lines.push('```\n');
+    }
+  }
+
+  const allOk = !results || results.every(r => r.success || r.optionalFailed);
+  lines.push(allOk ? '✅ 全部节点执行完毕' : '⚠️ 部分节点失败，查看执行日志了解详情');
+  return lines.join('\n');
+}
+
+/** Find nodes by label (case-insensitive, trimmed) and connect them. */
+function connectByLabel(srcLabel, tgtLabel, mapping, condition) {
+  const { nodes, edges, onConnect, setEdgeData, _pushUndo } = useStore.getState();
+  const find = (lbl) => {
+    const clean = lbl.trim().toLowerCase();
+    return nodes.find(n => (n.data?.label || '').trim().toLowerCase() === clean)?.id;
+  };
+  const src = find(srcLabel);
+  const tgt = find(tgtLabel);
+  if (!src || !tgt) {
+    toast.error(`无法连线: 未找到节点 "${!src ? srcLabel : tgtLabel}"`);
+    return;
+  }
+  _pushUndo();
+  const prevEdges = useStore.getState().edges;
+  onConnect({ source: src, target: tgt });
+  if (mapping) {
+    // Find the newly created edge (last in list) and set its mapping
+    const newEdges = useStore.getState().edges;
+    const newEdge = newEdges.find(e => e.source === src && e.target === tgt && !prevEdges.includes(e));
+    if (newEdge) {
+      setEdgeData(newEdge.id, { mapping });
+    }
+  }
+}
+
 export default function AIChat() {
   const { t } = useI18n();
   const { chatMessages, addChatMessage, clearChat, nodes, edges, addNode, updateNodeData, clearCanvas, models } = useStore();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
+  const [streamingText, setStreamingText] = useState('');
+  const loadingTimeoutRef = useRef(null);
+  const loadingSinceRef = useRef(null);
   const [selectedModel, setSelectedModel] = useState("");
   const [showAddModel, setShowAddModel] = useState(false);
   const [newModelForm, setNewModelForm] = useState({
@@ -21,6 +95,7 @@ export default function AIChat() {
   const [builtinReady, setBuiltinReady] = useState(false);
   const messagesEndRef = useRef(null);
   const fileInputRef = useRef(null);
+  const wsRef = useRef(null);
   const abortRef = useRef(null);
 
   useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [chatMessages, loading]);
@@ -35,6 +110,8 @@ export default function AIChat() {
     }).catch(() => {});
   }, []);
 
+  const FILE_EXTENSIONS = ['.txt','.md','.json','.js','.jsx','.ts','.tsx','.py','.html','.css','.csv','.xml','.yaml','.yml','.log','.sh','.env','.cfg','.ini','.toml','.sql','.java','.c','.cpp','.h','.go','.rs','.rb','.php'];
+
   const handleFileSelect = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -47,9 +124,8 @@ export default function AIChat() {
     }
 
     // 检查是否文本文件
-    const textExts = ['.txt','.md','.json','.js','.jsx','.ts','.tsx','.py','.html','.css','.csv','.xml','.yaml','.yml','.log','.sh','.env','.cfg','.ini','.toml','.sql','.java','.c','.cpp','.h','.go','.rs','.rb','.php'];
     const ext = '.' + file.name.split('.').pop().toLowerCase();
-    const isText = textExts.includes(ext) || file.type.startsWith('text/') || file.type === 'application/json';
+    const isText = FILE_EXTENSIONS.includes(ext) || file.type.startsWith('text/') || file.type === 'application/json';
 
     if (!isText) {
       toast.error(`不支持的文件类型: ${ext}。仅支持文本文件。`);
@@ -72,6 +148,16 @@ export default function AIChat() {
     e.target.value = '';
   };
 
+  const cleanupLoading = () => {
+    if (loadingTimeoutRef.current) {
+      clearTimeout(loadingTimeoutRef.current);
+      loadingTimeoutRef.current = null;
+    }
+    loadingSinceRef.current = null;
+    setLoading(false);
+    setStreamingText('');
+  };
+
   const handleSend = async () => {
     const msg = input.trim();
     if (!msg || loading) return;
@@ -90,9 +176,9 @@ export default function AIChat() {
         for (const action of result.actions) {
           switch (action.type) {
             case "add_node": addNode(action.payload.nodeType, { ...action.payload.data, config: action.payload.data?.config || {} }, action.payload.position); addChatMessage({ role: "system", content: t('chat.nodeAdded') }); break;
-            case "connect": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: "✅ 已连接" }); break;
-            case "connect_with_mapping": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: `✅ 已连接，字段映射: ${JSON.stringify(action.payload.mapping)}` }); break;
-            case "connect_with_condition": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: `✅ 已连接，条件: ${action.payload.condition}` }); break;
+            case "connect": useStore.getState()._pushUndo(); connectByLabel(action.payload.source_label, action.payload.target_label); addChatMessage({ role: "system", content: "✅ 已连接" }); break;
+            case "connect_with_mapping": useStore.getState()._pushUndo(); connectByLabel(action.payload.source_label, action.payload.target_label, action.payload.mapping); addChatMessage({ role: "system", content: `✅ 已连接，字段映射: ${JSON.stringify(action.payload.mapping)}` }); break;
+            case "connect_with_condition": useStore.getState()._pushUndo(); connectByLabel(action.payload.source_label, action.payload.target_label, null, action.payload.condition); addChatMessage({ role: "system", content: `✅ 已连接，条件: ${action.payload.condition}` }); break;
             case "connect_workflow": useStore.getState()._pushUndo(); useStore.getState().onConnect({ source: action.payload.source, target: action.payload.target }); addChatMessage({ role: "system", content: "✅ 工作流节点已连接" }); break;
             case "update_config": updateNodeData(action.payload.nodeId, { config: action.payload.config }); addChatMessage({ role: "system", content: t('chat.configUpdated') }); break;
             case "run_workflow":
@@ -104,11 +190,49 @@ export default function AIChat() {
                   s.setExecutionId(execution_id);
                   s.setRunLogOpen(true);
                   const ws = createExecutionSocket(execution_id);
+                  if (wsRef.current) { try { wsRef.current.close(); } catch {} }
+                  wsRef.current = ws;
+                  let wsDisconnectTimer = null;
                   ws.onmessage = (e) => {
                     const msg = JSON.parse(e.data);
                     if (msg.type === "log") s.addExecutionLog(msg.data);
-                    else if (msg.type === "complete") { s.setExecutionStatus("completed"); s.addExecutionLog({ level: "info", message: "执行完成" }); }
-                    else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); addChatMessage({ role: "system", content: `❌ 执行失败: ${msg.error}` }); }
+                    else if (msg.type === "complete") {
+                      clearTimeout(wsDisconnectTimer);
+                      s.setExecutionStatus("completed");
+                      s.addExecutionLog({ level: "info", message: "执行完成" });
+                      // Show output files in chat
+                      const outputFiles = msg.result?.outputFiles || [];
+                      const results = msg.result?.results || [];
+                      const md = formatOutputMarkdown(outputFiles, results);
+                      if (md) addChatMessage({ role: "assistant", content: md });
+                      // Auto-trigger AI report
+                      setTimeout(() => {
+                        const st = useStore.getState();
+                        if (st.chatMessages.length > 0) {
+                          const lastMsg = st.chatMessages[st.chatMessages.length - 1];
+                          if (lastMsg.role === 'assistant' && lastMsg.content.includes('输出文件')) {
+                            st.addChatMessage({ role: "assistant", content: "📊 **AI 报告生成**\n\n点击 `生成报告` 按钮，或直接输入 \"生成执行报告\" 让我为你总结这次执行的结果。", _reportPrompt: true });
+                          }
+                        }
+                      }, 500);
+                    }
+                    else if (msg.type === "error") { clearTimeout(wsDisconnectTimer); s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); addChatMessage({ role: "system", content: `❌ 执行失败: ${msg.error}` }); }
+                  };
+                  ws.onerror = (e) => {
+                    s.addExecutionLog({ level: "error", message: "WebSocket connection error" });
+                  };
+                  ws.onclose = () => {
+                    const state = useStore.getState();
+                    if (state.executionStatus === "running") {
+                      wsDisconnectTimer = setTimeout(() => {
+                        const currentState = useStore.getState();
+                        if (currentState.executionStatus === "running") {
+                          currentState.setExecutionStatus("failed");
+                          currentState.addExecutionLog({ level: "error", message: "连接断开，执行超时" });
+                          addChatMessage({ role: "system", content: "WebSocket 连接超时断开" });
+                        }
+                      }, 30000);
+                    }
                   };
                   addChatMessage({ role: "system", content: t('chat.aiTriggered') });
                 } catch (err) {
@@ -129,7 +253,16 @@ export default function AIChat() {
                   if (wf) {
                     useStore.getState().clearCanvas();
                     wf.nodes.forEach((n) => useStore.getState().addNode(n.type, { ...n.data, nodeId: undefined }, n.position));
-                    useStore.setState({ edges: wf.edges || [] });
+                    // Use loadCanvas to sync edgeData from loaded edges
+                    const st = useStore.getState();
+                    const nodeList = st.nodes;
+                    const idMap = {};
+                    const now = Date.now();
+                    const edgesWithIds = (wf.edges || []).map((e, i) => {
+                      const newId = `wf_e_${i}_${now}`;
+                      return { ...e, id: newId };
+                    });
+                    st.loadCanvas(nodeList, edgesWithIds);
                     addChatMessage({ role: "system", content: `✅ 已加载: ${wf.name}` });
                   }
                 } catch (err) {
@@ -138,15 +271,8 @@ export default function AIChat() {
               })();
               break;
             case "list_workflows":
-              (async () => {
-                try {
-                  const wfs = await listWorkflows();
-                  const names = wfs.map((w) => `#${w.id} ${w.name}`).join("\n");
-                  addChatMessage({ role: "assistant", content: names || "暂无已保存的工作流" });
-                } catch (err) {
-                  addChatMessage({ role: "system", content: `❌ 查询失败: ${err.message}` });
-                }
-              })();
+              // Now handled as backend task — results fed to AI model
+              addChatMessage({ role: "system", content: "🔍 查询工作流列表..." });
               break;
             case "export_workflow":
               const blob = new Blob([JSON.stringify({ nodes, edges }, null, 2)], { type: "application/json" });
@@ -155,6 +281,32 @@ export default function AIChat() {
               a.href = url; a.download = "workflow.json"; a.click();
               URL.revokeObjectURL(url);
               addChatMessage({ role: "system", content: "✅ 工作流已导出" });
+              break;
+            case "list_models":
+              addChatMessage({ role: "system", content: "..." });
+              break;
+            case "list_skills":
+              addChatMessage({ role: "system", content: "..." });
+              break;
+            case "list_knowledge_bases":
+              addChatMessage({ role: "system", content: "..." });
+              break;
+            case "undo":
+              useStore.getState().undo();
+              addChatMessage({ role: "system", content: "Undone" });
+              break;
+            case "delete_node":
+              {
+                const s = useStore.getState();
+                const node = s.nodes.find(n => n.id === action.payload.node_label || (n.data?.label || '').includes(action.payload.node_label));
+                if (node) {
+                  s._pushUndo();
+                  s.removeNode(node.id);
+                  addChatMessage({ role: "system", content: `Deleted "${node.data?.label || node.id}"` });
+                } else {
+                  addChatMessage({ role: "system", content: `Node not found: "${action.payload.node_label}"` });
+                }
+              }
               break;
             case "add_model":
               createModel(action.payload)
@@ -275,7 +427,7 @@ export default function AIChat() {
       const errMsg = err.response?.data?.error || err.message || 'Unknown error';
       addChatMessage({ role: "assistant", content: t('chat.requestFailed') + errMsg });
       toast.error(errMsg);
-    } finally { setLoading(false); }
+    } finally { cleanupLoading(); }
   };
 
   const handleKeyDown = (e) => {
@@ -420,6 +572,12 @@ export default function AIChat() {
                 </button>
               );
             })()}
+            {msg.content && msg.content.includes('输出文件') && (() => (
+              <button onClick={() => { setInput('生成执行报告'); }}
+                className="mt-1 text-[10px] px-2 py-0.5 rounded-md bg-accent-600/20 border border-accent-500/30 text-accent-300 hover:bg-accent-500/30 transition-colors flex items-center gap-1">
+                <Sparkles size={10} /> 生成报告
+              </button>
+            ))()}
           </div>
         ))}
 

@@ -33,6 +33,7 @@ export default function Toolbar() {
       toast.success(t('toolbar.started'));
       const ws = createExecutionSocket(execution_id);
       wsRef.current = ws;
+      let wsDisconnectTimer = null;
       ws.onmessage = (e) => {
         const msg = JSON.parse(e.data);
         if (msg.type === "log") {
@@ -82,9 +83,24 @@ export default function Toolbar() {
             s.setExecutionResults(msg.result.results);
           }
           wsRef.current = null;
+          clearTimeout(wsDisconnectTimer);
           toast.success('工作流执行完成', { icon: '✅', duration: 4000 });
+          // Show output files in chat
+          const outFiles = msg.result?.outputFiles || [];
+          const outResults = msg.result?.results || [];
+          if (outFiles.length > 0) {
+            const parts = ['## 📦 执行完成\n'];
+            for (const f of outFiles) {
+              if (f.nodeType === 'file_output' && f.content) {
+                parts.push(`📄 **${f.nodeName || '输出'}** — \`${f.content}\``);
+              } else if (f.content) {
+                parts.push(`📋 **${f.nodeName || '结果'}**\n\`\`\`\n${String(f.content).slice(0, 300)}\n\`\`\``);
+              }
+            }
+            s.addChatMessage({ role: "assistant", content: parts.join('\n') + '\n\n💡 输入"生成执行报告"让 AI 总结' });
+          }
         }
-        else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); wsRef.current = null; toast.error('工作流执行失败', { icon: '❌', duration: 5000 }); if ('Notification' in window && Notification.permission === 'granted') { new Notification('Local Canvas - 执行失败', { body: msg.error?.substring(0, 120) || '工作流执行未完成', icon: 'data:image/svg+xml,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ef4444"/><text x="50" y="68" text-anchor="middle" font-size="55" font-weight="bold" fill="white">✗</text></svg>' }); } }
+        else if (msg.type === "error") { s.setExecutionStatus("failed"); s.addExecutionLog({ level: "error", message: msg.error }); wsRef.current = null; clearTimeout(wsDisconnectTimer); toast.error('工作流执行失败', { icon: '❌', duration: 5000 }); if ('Notification' in window && Notification.permission === 'granted') { new Notification('Local Canvas - 执行失败', { body: msg.error?.substring(0, 120) || '工作流执行未完成', icon: (new Blob(['<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="#ef4444"/><text x="50" y="68" text-anchor="middle" font-size="55" font-weight="bold" fill="white">\u2717</text></svg>'])).type || '' }); } }
         else if (msg.type === "step_pause") {
           s.addExecutionLog({ level: "info", message: `⏸ 暂停于节点: ${msg.data?.label || msg.data?.id}` });
           if (msg.data?.id) {
@@ -93,8 +109,25 @@ export default function Toolbar() {
           }
         }
       };
-      ws.onerror = () => { wsRef.current = null; };
-      ws.onclose = () => { wsRef.current = null; };
+      ws.onerror = () => {
+        wsRef.current = null;
+        clearTimeout(wsDisconnectTimer);
+        s.addExecutionLog({ level: "error", message: "WebSocket 连接错误" });
+      };
+      ws.onclose = () => {
+        const state = useStore.getState();
+        if (state.executionStatus === "running") {
+          wsDisconnectTimer = setTimeout(() => {
+            const st = useStore.getState();
+            if (st.executionStatus === "running") {
+              st.setExecutionStatus("failed");
+              st.addExecutionLog({ level: "error", message: "连接断开，执行超时" });
+              toast.error('WebSocket 连接超时断开', { duration: 5000 });
+            }
+          }, 30000);
+        }
+        wsRef.current = null;
+      };
     } catch (err) {
       s.setExecutionStatus("failed");
       toast.dismiss(toastId);

@@ -18,19 +18,24 @@ export class AiService {
       throw new ValidationError('message is required');
     }
 
+    const db = getDb();
     const modelId = model_id || 'builtin';
     let model;
-    let timeoutMs = 60000;
+    let timeoutMs = 30000;
 
     if (modelId === 'builtin') {
       const available = fs.existsSync(DEFAULT_MODEL_PATH);
       if (!available) {
-        throw new ValidationError('内置模型文件未找到，请确认 models/builtin.gguf 存在');
+        // Fallback: use the first available user model instead
+        model = db.prepare("SELECT * FROM models WHERE user_id = ? LIMIT 1").get(userId);
+        if (!model) {
+          throw new ValidationError('内置模型不可用，且没有配置其他模型。请先添加一个模型（Ollama / OpenAI / Anthropic）');
+        }
+      } else {
+        model = { id: 'builtin', name: '内置模型 (本地)', adapter_type: 'builtin', config: {} };
+        timeoutMs = 120000;
       }
-      model = { id: 'builtin', name: '内置模型 (本地)', adapter_type: 'builtin', config: {} };
-      timeoutMs = 180000;
     } else {
-      const db = getDb();
       model = db.prepare('SELECT * FROM models WHERE id = ? AND user_id = ?').get(modelId, userId);
       if (!model) {
         throw new ValidationError('Model not found. Add a model first.');

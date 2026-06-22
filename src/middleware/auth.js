@@ -141,7 +141,8 @@ export function authOptional(req, res, next) {
     return next();
   }
 
-  extractUser(req); // sets req._authUser if valid
+  const user = extractUser(req);
+  if (user) req._authUser = user;
   next();
 }
 

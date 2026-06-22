@@ -2,21 +2,32 @@
  * Structured logging module using pino.
  *
  * - JSON output to stdout for log collectors (Fluentd, Vector, etc.)
- * - Pretty-print in development via LC_PRETTY_LOG=1 or when TTY
+ * - Pretty-print in development via LC_PRETTY_LOG=1 (requires pino-pretty installed)
  * - Log level via LC_LOG_LEVEL env (default: 'info')
  */
 import pino from 'pino';
 import { config } from './config.js';
 
 const level = config.log.level;
-const pretty = config.log.pretty || (process.stdout.isTTY && !config.log.jsonLog);
+
+// Only enable pretty-printing when LC_PRETTY_LOG=1 and pino-pretty is installed;
+// avoids crashing when pino-pretty gets removed (e.g. by npm install).
+let pretty = false;
+if (process.env.LC_PRETTY_LOG === '1') {
+  try {
+    require.resolve('pino-pretty');
+    pretty = true;
+  } catch {
+    console.warn('[logger] pino-pretty not installed, falling back to JSON output. Run: npm install pino-pretty');
+  }
+}
 
 const logger = pino({
   level,
   ...(pretty ? {
     transport: {
-      target: 'pino/file',
-      options: { destination: 1 },
+      target: 'pino-pretty',
+      options: { destination: 1, colorize: true, translateTime: 'HH:MM:ss' },
     },
   } : {}),
   serializers: {

@@ -24,7 +24,7 @@ export const executionSlice = (set, get) => ({
   setCurrentWorkflowName: (n) => set({ currentWorkflowName: n }),
 
   // --- Output directory ---
-  outputDir: "",
+  outputDir: "C:\\Users\\11481\\localcanvas-output",
   setOutputDir: (d) => set({ outputDir: d }),
 
   // --- Run log ---
